@@ -2,7 +2,7 @@
  * Everything is kept on the device (IndexedDB); every change is written to an outbox that the sync sends later.
  * Views: home (courses) · course: students | grades | submissions · sheets: sync, export, bulk, backup. */
 'use strict';
-var VERSION = '0.2';
+var VERSION = '0.3';
 var $ = function (s, r) { return (r || document).querySelector(s); };
 var ICON = {
   sync: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
@@ -68,7 +68,7 @@ function demo() {
       if (it.source !== 'manual') Object.keys(d.students).forEach(function (id) { if (rnd(100) < 88) { sb[id] = 1; if (rnd(100) < gr) g[id] = Math.round((it.max * (0.5 + rnd(50) / 100)) * 2) / 2; } });
       delete it.filled;
     });
-    return { meta: { key: key, code: code, name: name, sem: 'الفصل الأول 2026-2027', color: '#2563eb' }, data: d };
+    return { meta: { key: key, code: code, name: name, sem: 'الفصل الأول 2026-2027', color: '#6f7ee0' }, data: d };
   }
   var c1 = course('EARC2214|26271', 'EARC 2214', 'نظرية عمارة (1)', ['101', '201'], 14, [
     { id: 'T1', code: 'T1', title: 'تحليل موقع', max: 10, source: 'eduspace', published: true, filled: 100 },
@@ -78,7 +78,7 @@ function demo() {
   var c2 = course('LARC2002|26271', 'LARC 2002', 'مبادئ التصميم المعماري والبيئي', ['101', '202'], 11, [
     { id: 'P1', code: 'P1', title: 'لوحة الفكرة', max: 15, source: 'eduspace', published: false, filled: 60 },
     { id: 'M1', code: 'M1', title: 'تمرين الواجهات', max: 10, source: 'moodle', published: false, filled: false }]);
-  c2.meta.color = '#16a34a';
+  c2.meta.color = '#74a886';
   return { v: 2, demo: true, lastSync: null, courses: [c1.meta, c2.meta], data: { 'EARC2214|26271': c1.data, 'LARC2002|26271': c2.data }, outbox: [] };
 }
 
@@ -161,7 +161,13 @@ function openMenu() {
 
 /* ===================== home ===================== */
 function courseOf(key) { return S.courses.filter(function (c) { return c.key === key; })[0] || { code: '?' }; }
-var TINTS = ['c-lav', 'c-rose', 'c-sky', 'c-sage'];
+/* the eight course colours (handoff/brand_rules.md §5): deep (stored with the course) → [light, middle, deep] */
+var FAMILY = { '#6f7ee0': ['#eceefc', '#b3bcf5', '#6f7ee0'], '#d97aa0': ['#fbeef3', '#f3bfd2', '#d97aa0'], '#6fa3b8': ['#e8f2f6', '#b9d6e2', '#6fa3b8'],
+  '#74a886': ['#edf5ef', '#c4dfcc', '#74a886'], '#e08a5a': ['#fdf0e8', '#f6c9ac', '#e08a5a'], '#c49a2c': ['#f8f3e3', '#ead79c', '#c49a2c'],
+  '#9b7cc9': ['#f4eefa', '#d3c0ec', '#9b7cc9'], '#7c879a': ['#eef0f4', '#c7cdd8', '#7c879a'] };
+var OLDCOL = { '#2563eb': '#6f7ee0', '#16a34a': '#74a886', '#9333ea': '#9b7cc9', '#ea580c': '#e08a5a', '#db2777': '#d97aa0', '#0891b2': '#6fa3b8', '#ca8a04': '#c49a2c', '#475569': '#7c879a' };
+function family(color) { return FAMILY[OLDCOL[color] || color] || FAMILY['#6f7ee0']; }
+function tint(node, color) { var f = family(color); node.style.setProperty('--t', f[0]); node.style.setProperty('--m', f[1]); node.style.setProperty('--d', f[2]); return node; }
 function brand() { var b = el('span', 'brand'); b.innerHTML = 'EduSpace<sup>™</sup>'; return b; }
 function topBar(backFn) {
   var t = el('div', 'bar');
@@ -195,11 +201,12 @@ function currentItem(d) {   /* the newest item that still has work to grade, els
 function legend(cls) {
   var l = el('div', 'legend');
   [['var(--hatch)', 'لم يصل'], ['', 'سلّم'], ['', 'صُحّح']].forEach(function (x, i) {
-    var s = el('span', '', x[1]); s.style.setProperty('--c', i === 0 ? '#ebecf1' : i === 1 ? 'var(--rose2)' : 'var(--slate)'); l.appendChild(s);
+    var s = el('span', '', x[1]); s.style.setProperty('--c', i === 0 ? '#ebecf1' : i === 1 ? 'var(--m)' : 'var(--d)'); l.appendChild(s);
   });
   return l;
 }
 function drawHome(app) {
+  tint(document.body, '#7c879a');
   app.appendChild(topBar());
   var h = new Date().getHours();
   title(app, h < 12 ? 'صباح الخير' : 'مساء الخير', 'لديك ' + pl(S.courses.length, 'مساق', 'مساقات') + ' على هذا الجهاز');
@@ -207,7 +214,7 @@ function drawHome(app) {
   S.courses.forEach(function (c, i) {
     var d = S.data[c.key], it = currentItem(d), x = it ? itemStats(d, it) : { total: Object.keys(d.students).length, sub: 0, graded: 0 };
     var pend = S.outbox.filter(function (o) { return o.course === c.key; }).length;
-    var k = el('div', 'cc ' + TINTS[i % TINTS.length]); k.tabIndex = 0; k.setAttribute('role', 'button');
+    var k = tint(el('div', 'cc'), c.color); k.tabIndex = 0; k.setAttribute('role', 'button');
     var hd = el('div', 'hd'), av = ico('users', c.name, null); av.tabIndex = -1; hd.appendChild(av);
     var t = el('div', 't'); t.appendChild(el('span', 'code', c.code)); t.appendChild(el('span', 'n14', c.name)); hd.appendChild(t);
     if (pend) hd.appendChild(el('span', 'badge', pl(pend, 'تغيير', 'تغييرات')));
@@ -228,6 +235,7 @@ function drawHome(app) {
 /* ===================== course ===================== */
 function drawCourse(app) {
   var c = courseOf(R.key), d = S.data[R.key];
+  tint(document.body, c.color);
   app.appendChild(topBar(function () { go('home'); }));
   title(app, c.code, c.name);
   var tabs = el('div', 'pills');

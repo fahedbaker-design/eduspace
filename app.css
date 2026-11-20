@@ -1,4 +1,4 @@
-/* EduSpace offline — styles 0.2: the approved style (handoff/brand_rules.md).
+/* EduSpace offline — styles 0.3: course colours in three tones (--t light, --m middle, --d deep); 0.2: the approved style (handoff/brand_rules.md).
    Type: IBM Plex Sans Arabic 400/700, six sizes only: 48 · 28 · 18 · 16 · 14 · 12. */
 :root{--ground:#f6f6f8;--card:#fff;--fg:#1d1e24;--fg2:#4b4e5e;--mute:#7d8194;--faint:#c6c8d1;--line:#e4e6ec;
   --lav:#eceefc;--lav2:#9aa6f2;--rose:#fbeef3;--rose2:#f0a9c2;--sky:#e8f2f6;--sky2:#a8c7d4;--sage:#edf5ef;--sage2:#b9d6c2;--slate:#b9c6d4;
@@ -52,15 +52,12 @@ h3{font-size:18px;line-height:1.4;font-weight:700;margin:0}
 .cc .code{font-size:16px;font-weight:700;direction:ltr;display:block;text-align:right}
 .big{font-size:48px;line-height:1;font-weight:400;direction:ltr;text-align:right}
 .big small{font-size:18px;color:var(--mute)}
-.c-lav{background:var(--lav)}.c-rose{background:var(--rose)}.c-sky{background:var(--sky)}.c-sage{background:var(--sage)}
-/* progress: layered rounded rectangles (hatched track · submitted · graded) */
+.cc{background:var(--t)}
+/* progress: layered rounded rectangles — hatched track, then middle tone, then deep tone of the course colour */
 .prog{position:relative;height:36px;border-radius:12px;background:var(--hatch);overflow:hidden}
 .prog i{position:absolute;inset-block:0;inset-inline-start:0;border-radius:12px}
-.prog i.s{background:var(--rose2)}
-.prog i.g{background:var(--slate)}
-.c-lav .prog i.s{background:var(--lav2)}.c-lav .prog i.g{background:#6f7ee0}
-.c-rose .prog i.s{background:var(--rose2)}.c-rose .prog i.g{background:#d97aa0}
-.c-sky .prog i.s{background:var(--sky2)}.c-sky .prog i.g{background:#7aa6b8}
+.prog i.s{background:var(--m)}
+.prog i.g{background:var(--d)}
 .prog.sm{height:10px;border-radius:5px}.prog.sm i{border-radius:5px}
 .legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--fg2)}
 .legend span::before{content:"";display:inline-block;width:10px;height:10px;border-radius:3px;margin-inline-end:6px;vertical-align:-1px;background:var(--c)}
