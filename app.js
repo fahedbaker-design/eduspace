@@ -1,8 +1,8 @@
-/* EduSpace offline — 0.5.2: round buttons on the right, the mark alone on the left; the sync state under the title; home cards at the bottom; the progress bar tells its layers on a tap; a new version reloads itself. 0.5.1: the version next to the mark. 0.5: two-way sync — every change is a record in the outbox (grade, section, publish, removal) with the value it started from; «مزامنة الآن» sends them, then downloads; a cell changed in both places comes back as a conflict to decide. 0.4: linked to EduSpace (read only: «تنزيل بياناتي» brings the real courses; editing returns with two-way sync); tips on round buttons. 0.2: the approved style (handoff/brand_rules.md); 0.1: demo data, simulated sync.
+/* EduSpace offline — 0.5.3: the sync state on the right under the title; the version under the mark; each layer of the progress bar has its own bubble. 0.5.2: round buttons on the right, the mark alone on the left; the sync state under the title; home cards at the bottom; the progress bar tells its layers on a tap; a new version reloads itself. 0.5.1: the version next to the mark. 0.5: two-way sync — every change is a record in the outbox (grade, section, publish, removal) with the value it started from; «مزامنة الآن» sends them, then downloads; a cell changed in both places comes back as a conflict to decide. 0.4: linked to EduSpace (read only: «تنزيل بياناتي» brings the real courses; editing returns with two-way sync); tips on round buttons. 0.2: the approved style (handoff/brand_rules.md); 0.1: demo data, simulated sync.
  * Everything is kept on the device (IndexedDB); every change is written to an outbox that the sync sends later.
  * Views: home (courses) · course: students | grades | submissions · sheets: sync, export, bulk, backup. */
 'use strict';
-var VERSION = '0.5.2';
+var VERSION = '0.5.3';
 var $ = function (s, r) { return (r || document).querySelector(s); };
 var ICON = {
   sync: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
@@ -325,7 +325,7 @@ var FAMILY = { '#6f7ee0': ['#eceefc', '#b3bcf5', '#6f7ee0'], '#d97aa0': ['#fbeef
 var OLDCOL = { '#2563eb': '#6f7ee0', '#16a34a': '#74a886', '#9333ea': '#9b7cc9', '#ea580c': '#e08a5a', '#db2777': '#d97aa0', '#0891b2': '#6fa3b8', '#ca8a04': '#c49a2c', '#475569': '#7c879a' };
 function family(color) { return FAMILY[OLDCOL[color] || color] || FAMILY['#6f7ee0']; }
 function tint(node, color) { var f = family(color); node.style.setProperty('--t', f[0]); node.style.setProperty('--m', f[1]); node.style.setProperty('--d', f[2]); return node; }
-function brand() { var b = el('span', 'brand'); b.innerHTML = 'EduSpace<sup>™</sup>'; b.appendChild(el('span', 'ver', 'v' + VERSION)); return b; }
+function brand() { var b = el('span', 'brand'); b.innerHTML = '<span class="w">EduSpace<sup>™</sup></span>'; b.appendChild(el('span', 'ver', 'v' + VERSION)); return b; }
 /* the top bar: the round buttons on the right (the menu first, then back), the EduSpace™ mark alone on the far left */
 function topBar(backFn) {
   var t = el('div', 'bar');
@@ -335,7 +335,7 @@ function topBar(backFn) {
   t.appendChild(brand());
   return t;
 }
-/* the page title, and under it on the left the sync state */
+/* the page title, and under it on the right the sync state */
 function title(app, main, sub) {
   var h = el('h1', '', main); if (sub) h.appendChild(el('span', '', sub)); app.appendChild(h);
   var r = el('div', 'syncrow'), c = el('button', 'sync'); c.id = 'sync'; c.type = 'button'; c.onclick = openSync; r.appendChild(c); app.appendChild(r);
@@ -345,17 +345,31 @@ function prog(total, sub, graded, small) {
   var p = el('div', 'prog' + (small ? ' sm' : '')), pc = function (n) { return total ? Math.max(n ? 4 : 0, Math.round(n / total * 100)) : 0; };
   var a = el('i', 's'); a.style.width = pc(sub) + '%'; p.appendChild(a);
   var b = el('i', 'g'); b.style.width = pc(graded) + '%'; p.appendChild(b);
-  var tip = 'سلّم ' + sub + ' · صُحّح ' + graded + ' · لم يصل ' + Math.max(0, total - sub) + ' · من ' + total;
-  p.setAttribute('role', 'button'); p.setAttribute('aria-label', tip); p.setAttribute('data-tip', tip); p.tabIndex = 0;
-  p.onclick = function (e) {        /* a tap shows what the layers mean; another tap (or a tap elsewhere) hides it */
+  /* each layer speaks for itself: a tap on a layer shows a bubble about that layer only */
+  var layers = [
+    { to: pc(graded), tip: 'صُحّح ' + graded + ' من ' + total },
+    { to: pc(sub), tip: 'سلّم ' + sub + ' من ' + total + (sub > graded ? ' · ' + (sub - graded) + ' بانتظار التصحيح' : '') },
+    { to: 100, tip: 'لم يصل ' + Math.max(0, total - sub) + ' من ' + total }
+  ];
+  p.setAttribute('role', 'button'); p.setAttribute('aria-label', layers.map(function (l) { return l.tip; }).join(' · ')); p.tabIndex = 0;
+  p.onclick = function (e) {
     e.stopPropagation();
-    var on = p.classList.contains('tipon');
-    [].forEach.call(document.querySelectorAll('.prog.tipon'), function (x) { x.classList.remove('tipon'); });
-    if (!on) p.classList.add('tipon');
+    var r = p.getBoundingClientRect(), rtl = getComputedStyle(p).direction === 'rtl';
+    var at = ((rtl ? r.right - e.clientX : e.clientX - r.left) / r.width) * 100, from = 0, L = layers[2];
+    for (var i = 0; i < layers.length; i++) { if (at <= layers[i].to && layers[i].to > from) { L = layers[i]; break; } from = Math.max(from, layers[i].to); }
+    var start = 0; for (var j = 0; j < layers.indexOf(L); j++) start = Math.max(start, layers[j].to);
+    var old = p.querySelector('.tipb'), same = old && old.textContent === L.tip;
+    hideTips(); if (same) return;
+    var t = el('span', 'tipb', L.tip), mid = (start + L.to) / 2;
+    if (mid < 20) t.style.insetInlineStart = '0';                 /* near the start: open from the edge */
+    else if (mid > 80) t.style.insetInlineEnd = '0';
+    else { t.style.insetInlineStart = mid + '%'; t.style.transform = 'translateX(' + (rtl ? '50%' : '-50%') + ')'; }
+    p.appendChild(t);
   };
   return p;
 }
-document.addEventListener('click', function () { [].forEach.call(document.querySelectorAll('.prog.tipon'), function (x) { x.classList.remove('tipon'); }); });
+function hideTips() { [].forEach.call(document.querySelectorAll('.tipb'), function (x) { x.remove(); }); }
+document.addEventListener('click', hideTips);
 function itemStats(d, it) {
   var ids = Object.keys(d.students), g = d.grades[it.id] || {}, s = it.sub || {};
   var graded = ids.filter(function (id) { return g[id] != null; }).length;
