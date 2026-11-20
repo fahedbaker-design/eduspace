@@ -2,7 +2,7 @@
  * Everything is kept on the device (IndexedDB); every change is written to an outbox that the sync sends later.
  * Views: home (courses) · course: students | grades | submissions · sheets: sync, export, bulk, backup. */
 'use strict';
-var VERSION = '0.4';
+var VERSION = '0.4.1';
 var $ = function (s, r) { return (r || document).querySelector(s); };
 var ICON = {
   sync: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
@@ -125,8 +125,27 @@ function parseCode(code) {
 }
 function api(link, op) {
   return fetch(link.url, { method: 'POST', body: JSON.stringify({ t: link.t, op: op }) })
-    .then(function (r) { if (!r.ok) throw new Error('الخادم ردّ ' + r.status); return r.json(); })
-    .then(function (x) { if (!x || !x.ok) throw new Error((x && x.error) || 'ردّ غير مفهوم'); return x; });
+    .catch(function () { throw new Error('تعذّر الوصول إلى خدمة الربط. تأكد من الإنترنت، ومن أنك فتحت رابط الخدمة من اللوحة مرة واحدة وسمحت بالإذن.'); })
+    .then(function (r) {
+      if (!r.ok) throw new Error('ردّت خدمة الربط برمز ' + r.status + '. افتح رابطها من اللوحة («تطبيق الآيباد» ← «فتح خدمة الربط») وتأكد أنها تعرض {"ok":true}.');
+      return r.text();
+    })
+    .then(function (t) {
+      var x; try { x = JSON.parse(t); }
+      catch (e) { throw new Error('ردّت Google بصفحة بدل البيانات، وغالبًا معناه أن خدمة الربط لم تُمنح الإذن بعد. في اللوحة: «تطبيق الآيباد» ← «فتح خدمة الربط»، واسمح بالإذن حتى ترى {"ok":true}، ثم أعد المحاولة.'); }
+      if (!x || !x.ok) throw new Error((x && x.error) || 'ردّ غير مفهوم');
+      return x;
+    });
+}
+/* an error stays on screen (with a copy button) until it is read */
+function fail(title, e) {
+  var msg = String((e && e.message) || e);
+  sheet(title, function (b) {
+    var p = el('p', '', msg); p.setAttribute('dir', 'auto'); b.appendChild(p);
+    b.appendChild(el('p', 'n12', 'إن لم يتضح السبب، انسخ الرسالة وأرسلها إلى Claude.'));
+  }, [['نسخ الرسالة', 'sec', function () {
+    try { navigator.clipboard.writeText(title + ': ' + msg).then(function () { say('نُسخت'); }); } catch (x) { say('انسخها يدويًا'); }
+  }]]);
 }
 /* the courses as EduSpace has them → this app's data (read only until two-way sync) */
 function pull() {
@@ -158,7 +177,7 @@ function openLink() {
   }, S.link ? [['تنزيل بياناتي الآن', '', function (h) {
     h.body.appendChild(el('p', 'n14', 'جارٍ التنزيل…'));
     pull().then(function (x) { h.close(); go('home'); say('نزلت ' + pl(x.courses.length, 'مساق', 'مساقات') + ' من EduSpace.'); })
-      .catch(function (e) { say('تعذّر التنزيل: ' + e.message); h.close(); });
+      .catch(function (e) { h.close(); fail('تعذّر التنزيل', e); });
   }, 'import'], ['إلغاء الربط', 'sec', function (h) {
     if (!confirm('إلغاء ربط هذا الجهاز؟ تبقى البيانات النازلة عليه، ولا يتصل بعدها حتى تربطه برمز جديد.')) return;
     delete S.link; persist(); h.close(); draw();
@@ -170,7 +189,7 @@ function openLink() {
       lk.device = x.device; S.link = lk; persist();
       if (!confirm('رُبط الجهاز باسم «' + x.device + '». تنزيل بياناتك الآن؟ تُستبدل البيانات التجريبية.')) { h.close(); draw(); return; }
       return pull().then(function (y) { h.close(); go('home'); say('نزلت ' + pl(y.courses.length, 'مساق', 'مساقات') + ' من EduSpace.'); });
-    }).catch(function (e) { say('تعذّر الربط: ' + e.message); });
+    }).catch(function (e) { h.close(); fail('تعذّر الربط', e); });
   }, 'link']]);
 }
 function openSync() {
@@ -187,7 +206,7 @@ function openSync() {
     if (!navigator.onLine) { say('لا إنترنت الآن. التغييرات محفوظة وستُرسل عند الاتصال.'); return; }
     if (S.link && !S.demo) {
       h.body.textContent = 'جارٍ التنزيل…';
-      pull().then(function (x) { h.close(); draw(); say('حُدّثت البيانات من EduSpace.'); }).catch(function (e) { h.close(); say('تعذّرت المزامنة: ' + e.message); });
+      pull().then(function (x) { h.close(); draw(); say('حُدّثت البيانات من EduSpace.'); }).catch(function (e) { h.close(); fail('تعذّرت المزامنة', e); });
       return;
     }
     h.body.textContent = 'جارٍ الإرسال…';
