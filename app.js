@@ -1,8 +1,8 @@
-/* EduSpace offline — prototype 0.2: the approved style (handoff/brand_rules.md); 0.1: demo data, simulated sync.
+/* EduSpace offline — 0.4: linked to EduSpace (read only: «تنزيل بياناتي» brings the real courses; editing returns with two-way sync); tips on round buttons. 0.2: the approved style (handoff/brand_rules.md); 0.1: demo data, simulated sync.
  * Everything is kept on the device (IndexedDB); every change is written to an outbox that the sync sends later.
  * Views: home (courses) · course: students | grades | submissions · sheets: sync, export, bulk, backup. */
 'use strict';
-var VERSION = '0.3';
+var VERSION = '0.4';
 var $ = function (s, r) { return (r || document).querySelector(s); };
 var ICON = {
   sync: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
@@ -18,12 +18,13 @@ var ICON = {
   del: '<path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>',
   list: '<path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/>',
   eye: '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
   save: '<path d="M15.2 3a2 2 0 0 1 1.4.6l3.8 3.8a2 2 0 0 1 .6 1.4V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M17 21v-7a1 1 0 0 0-1-1H8a1 1 0 0 0-1 1v7"/><path d="M7 3v4a1 1 0 0 0 1 1h7"/>'
 };
 function svg(k) { return '<svg viewBox="0 0 24 24" aria-hidden="true">' + (ICON[k] || '') + '</svg>'; }
 function el(tag, cls, txt) { var x = document.createElement(tag); if (cls) x.className = cls; if (txt != null) x.textContent = txt; return x; }
 function btn(text, cls, fn, icon) { var b = el('button', 'btn' + (cls ? ' ' + cls : '')); b.type = 'button'; b.innerHTML = icon ? svg(icon) : ''; b.appendChild(document.createTextNode(text)); b.onclick = fn; return b; }
-function ico(k, label, fn) { var b = el('button', 'ico'); b.type = 'button'; b.innerHTML = svg(k); b.setAttribute('aria-label', label); b.title = label; b.onclick = fn; return b; }
+function ico(k, label, fn) { var b = el('button', 'ico'); b.type = 'button'; b.innerHTML = svg(k); b.setAttribute('aria-label', label); b.setAttribute('data-tip', label); b.onclick = fn; return b; }
 function pl(n, one, many) { return n + ' ' + (n === 1 ? one : many); }
 function say(t) { var x = $('#toast'); x.textContent = t; x.classList.add('on'); clearTimeout(say.h); say.h = setTimeout(function () { x.classList.remove('on'); }, 2600 + t.length * 30); }
 function num(v) { var s = String(v == null ? '' : v).replace(/[٠-٩]/g, function (d) { return d.charCodeAt(0) - 0x660; }).replace(',', '.').trim(); return s === '' ? null : Number(s); }
@@ -117,17 +118,78 @@ function sheet(title, build, foot) {
   f.appendChild(btn('إغلاق', 'sec', h.close));
   return h;
 }
+/* ===================== the link to EduSpace (Sync.gs in the panel, through «EduSpace Sync») ===================== */
+function parseCode(code) {
+  var m = /^ES1\.([0-9a-f]{64})\.([A-Za-z0-9_-]{20,})$/.exec(String(code || '').replace(/\s/g, ''));
+  return m ? { t: m[1], url: 'https://script.google.com/macros/s/' + m[2] + '/exec' } : null;
+}
+function api(link, op) {
+  return fetch(link.url, { method: 'POST', body: JSON.stringify({ t: link.t, op: op }) })
+    .then(function (r) { if (!r.ok) throw new Error('الخادم ردّ ' + r.status); return r.json(); })
+    .then(function (x) { if (!x || !x.ok) throw new Error((x && x.error) || 'ردّ غير مفهوم'); return x; });
+}
+/* the courses as EduSpace has them → this app's data (read only until two-way sync) */
+function pull() {
+  if (!S.link) return Promise.reject(new Error('اربط الجهاز أولًا'));
+  if (!navigator.onLine) return Promise.reject(new Error('لا إنترنت الآن'));
+  return api(S.link, 'pull').then(function (x) {
+    var courses = [], data = {};
+    x.courses.forEach(function (c) {
+      courses.push({ key: c.key, code: c.code, name: c.name, sem: c.sem, color: c.color });
+      var st = {}; c.students.forEach(function (s) { st[s.id] = s; });
+      data[c.key] = { students: st, secs: c.secs || {}, grades: c.grades || {},
+        items: c.items.map(function (it) { it.sub = (c.subs || {})[it.id] || {}; return it; }) };
+    });
+    S = { v: 2, demo: false, readonly: true, link: S.link, lastSync: x.at, courses: courses, data: data, outbox: [] };
+    persist(); return x;
+  });
+}
+function openLink() {
+  sheet('الربط بـ EduSpace', function (b) {
+    if (S.link) {
+      b.appendChild(el('p', 'n14', 'هذا الجهاز مربوط باسم «' + (S.link.device || 'الآيباد') + '». آخر تنزيل: ' + when(S.lastSync) + '.'));
+      b.appendChild(el('p', 'n12', 'في هذه المرحلة تنزل بياناتك للعرض والتصدير فقط. التعديل والإرسال إلى EduSpace يأتيان مع المزامنة في الاتجاهين.'));
+      return;
+    }
+    b.appendChild(el('p', 'n14', 'في اللوحة: بطاقة «تطبيق الآيباد» ← «إنشاء رمز ربط». انسخ الرمز والصقه هنا.'));
+    var f = el('div', 'field'); f.appendChild(el('label', '', 'رمز الربط'));
+    var t = el('textarea', 'inp'); t.id = 'lk-code'; t.dir = 'ltr'; t.style.cssText = 'min-height:96px;border-radius:18px;padding:12px 16px;font-size:14px;width:100%';
+    f.appendChild(t); b.appendChild(f);
+  }, S.link ? [['تنزيل بياناتي الآن', '', function (h) {
+    h.body.appendChild(el('p', 'n14', 'جارٍ التنزيل…'));
+    pull().then(function (x) { h.close(); go('home'); say('نزلت ' + pl(x.courses.length, 'مساق', 'مساقات') + ' من EduSpace.'); })
+      .catch(function (e) { say('تعذّر التنزيل: ' + e.message); h.close(); });
+  }, 'import'], ['إلغاء الربط', 'sec', function (h) {
+    if (!confirm('إلغاء ربط هذا الجهاز؟ تبقى البيانات النازلة عليه، ولا يتصل بعدها حتى تربطه برمز جديد.')) return;
+    delete S.link; persist(); h.close(); draw();
+  }]] : [['ربط', '', function (h) {
+    var lk = parseCode($('#lk-code').value);
+    if (!lk) { say('الرمز غير صحيح. انسخه كاملًا من اللوحة.'); return; }
+    if (!navigator.onLine) { say('الربط يحتاج إنترنت مرة واحدة.'); return; }
+    api(lk, 'ping').then(function (x) {
+      lk.device = x.device; S.link = lk; persist();
+      if (!confirm('رُبط الجهاز باسم «' + x.device + '». تنزيل بياناتك الآن؟ تُستبدل البيانات التجريبية.')) { h.close(); draw(); return; }
+      return pull().then(function (y) { h.close(); go('home'); say('نزلت ' + pl(y.courses.length, 'مساق', 'مساقات') + ' من EduSpace.'); });
+    }).catch(function (e) { say('تعذّر الربط: ' + e.message); });
+  }, 'link']]);
+}
 function openSync() {
   sheet('المزامنة', function (b) {
     b.appendChild(el('p', 'n14', navigator.onLine ? 'متصل بالإنترنت.' : 'لا إنترنت الآن. تعمل كالمعتاد، وكل التغييرات محفوظة على الجهاز إلى أن تتصل.'));
     b.appendChild(el('p', 'n14', 'آخر مزامنة: ' + when(S.lastSync)));
-    if (S.demo) b.appendChild(el('p', 'banner', 'نسخة تجريبية: المزامنة هنا محاكاة، ولا اتصال بـ EduSpace بعد.'));
+    if (S.demo) b.appendChild(el('p', 'banner', 'بيانات تجريبية: المزامنة هنا محاكاة. اربط الجهاز بـ EduSpace من زر النقاط الثلاث.'));
+    else if (S.readonly) b.appendChild(el('p', 'banner', 'بياناتك من EduSpace للعرض والتصدير. «مزامنة الآن» تنزّل آخر ما فيها.'));
     b.appendChild(el('p', 'lab', S.outbox.length ? 'بانتظار الإرسال (' + S.outbox.length + ')' : 'لا تغييرات بانتظار الإرسال'));
     S.outbox.slice(-40).reverse().forEach(function (c) {
       var r = el('div', 'ch'); r.appendChild(el('span', 'tag', courseOf(c.course).code)); r.appendChild(el('span', 'sp', c.text)); r.appendChild(el('span', 'n12', new Date(c.at).toLocaleTimeString('ar-EG-u-nu-latn', { hour: '2-digit', minute: '2-digit' }))); b.appendChild(r);
     });
   }, [['مزامنة الآن', '', function (h) {
     if (!navigator.onLine) { say('لا إنترنت الآن. التغييرات محفوظة وستُرسل عند الاتصال.'); return; }
+    if (S.link && !S.demo) {
+      h.body.textContent = 'جارٍ التنزيل…';
+      pull().then(function (x) { h.close(); draw(); say('حُدّثت البيانات من EduSpace.'); }).catch(function (e) { h.close(); say('تعذّرت المزامنة: ' + e.message); });
+      return;
+    }
     h.body.textContent = 'جارٍ الإرسال…';
     setTimeout(function () { var n = S.outbox.length; S.outbox = []; S.lastSync = Date.now(); persist(); h.close(); draw(); say(n ? 'أُرسل ' + pl(n, 'تغيير', 'تغييرات') + ' (محاكاة).' : 'لا جديد للإرسال.'); }, 900);
   }, 'sync']]);
@@ -142,6 +204,8 @@ function share(blob, name) {
 function openMenu() {
   sheet('البيانات على هذا الجهاز', function (b) {
     b.appendChild(el('p', 'n14', 'كل بياناتك محفوظة داخل هذا الآيباد. احفظ نسخة في «الملفات» من وقت لآخر.'));
+    var lb = btn(S.link ? 'الربط بـ EduSpace · مربوط' : 'الربط بـ EduSpace', S.link ? 'sec' : '', function () { document.querySelector('.ov').remove(); openLink(); }, 'link');
+    lb.style.marginInlineEnd = '8px'; b.appendChild(lb);
     b.appendChild(btn('حفظ نسخة احتياطية', 'sec', function () {
       share(new Blob([JSON.stringify(S)], { type: 'application/json' }), 'EduSpace-نسخة-' + new Date().toISOString().slice(0, 10) + '.json');
     }, 'save'));
@@ -156,7 +220,7 @@ function openMenu() {
       }).catch(function (e) { say('تعذّرت الاستعادة: ' + e.message); });
     };
     b.appendChild(el('p', 'n12', 'الإصدار ' + VERSION + (S.demo ? ' · بيانات تجريبية بأسماء مخترعة' : '') + ' · ')).appendChild((function () { var a = el('a', '', 'صفحة الاختبار'); a.href = 'test.html'; return a; })());
-  }, [['إعادة البيانات التجريبية', 'sec', function (h) { if (!confirm('تُمحى التغييرات وتعود البيانات التجريبية الأولى. متابعة؟')) return; S = demo(); persist(); h.close(); go('home'); }]]);
+  }, S.demo ? [['إعادة البيانات التجريبية', 'sec', function (h) { if (!confirm('تُمحى التغييرات وتعود البيانات التجريبية الأولى. متابعة؟')) return; S = demo(); persist(); h.close(); go('home'); }]] : []);
 }
 
 /* ===================== home ===================== */
@@ -238,6 +302,7 @@ function drawCourse(app) {
   tint(document.body, c.color);
   app.appendChild(topBar(function () { go('home'); }));
   title(app, c.code, c.name);
+  if (S.readonly) app.appendChild(el('p', 'banner', 'للعرض والتصدير: التعديل والإرسال إلى EduSpace يأتيان مع المزامنة في الاتجاهين.'));
   var tabs = el('div', 'pills');
   [['students', 'الطلاب', 'users'], ['grades', 'الدرجات', 'grades'], ['subs', 'التسليمات', 'inbox']].forEach(function (t) {
     var b = el('button', 'pill' + (R.tab === t[0] ? ' on' : '')); b.type = 'button'; b.innerHTML = svg(t[2]); b.appendChild(document.createTextNode(t[1]));
@@ -317,6 +382,11 @@ function drawStudents(app, d) {
 function bulkBar(app, d) {
   var ids = selIds(d); if (!ids.length) return;
   var b = el('div', 'bulk'); b.appendChild(el('b', '', 'محدد ' + pl(ids.length, 'طالب', 'طالبًا')));
+  if (S.readonly) {
+    b.appendChild(btn('تصدير', '', function () { openExport(d, ids); }, 'export'));
+    b.appendChild(btn('إلغاء', '', function () { UI.sel = {}; draw(); }, 'x'));
+    app.appendChild(b); return;
+  }
   b.appendChild(btn('الشعبة', '', function () { bulkSection(d, ids); }, 'list'));
   b.appendChild(btn('درجة موحّدة', '', function () { bulkGrade(d, ids, ''); }, 'grades'));
   b.appendChild(btn('صفر', '', function () { bulkGrade(d, ids, '0'); }));
@@ -380,6 +450,7 @@ function drawGrades(app, d) {
     d.items.forEach(function (it) {
       var g = (d.grades[it.id] = d.grades[it.id] || {}), td = el('td', 'g'), inp = el('input', 'cell');
       inp.value = fmt(g[s.id]); inp.inputMode = 'decimal'; inp.setAttribute('aria-label', it.code + ' ' + s.name);
+      if (S.readonly) { inp.readOnly = true; inp.tabIndex = -1; }
       if (g[s.id] != null) tot += g[s.id];
       inp.onchange = function () {
         var v = num(inp.value);
@@ -395,7 +466,7 @@ function drawGrades(app, d) {
     tb.appendChild(tr);
   });
   t.appendChild(tb); tw.appendChild(t); app.appendChild(tw);
-  app.appendChild(el('p', 'n12', 'اضغط عنوان أي عمود لنشره في EduSpace أو إخفائه. «نشر» يخص صفحة الطالب في EduSpace فقط؛ ولـ Moodle استعمل «تصدير».'));
+  if (!S.readonly) app.appendChild(el('p', 'n12', 'اضغط عنوان أي عمود لنشره في EduSpace أو إخفائه. «نشر» يخص صفحة الطالب في EduSpace فقط؛ ولـ Moodle استعمل «تصدير».'));
 }
 function itemSheet(d, it) {
   var g = d.grades[it.id] || {}, ids = Object.keys(d.students), done = ids.filter(function (id) { return g[id] != null; }).length;
@@ -405,7 +476,7 @@ function itemSheet(d, it) {
     b.appendChild(big); b.appendChild(prog(xs.total, xs.sub, xs.graded)); var lg = legend(); lg.style.margin = '8px 0 12px'; b.appendChild(lg);
     b.appendChild(el('p', 'n14', it.published ? 'منشور: يرى الطلاب درجاتهم فيه في EduSpace بعد المزامنة.' : 'غير منشور: لا يراه الطلاب في EduSpace.'));
     if (it.source === 'moodle') b.appendChild(el('p', 'n12', 'تكليف مستورد من Moodle. نشره هنا يُظهره للطلاب في EduSpace أيضًا، ولا يرسل شيئًا إلى Moodle.'));
-  }, [[it.published ? 'إخفاء من EduSpace' : 'نشر في EduSpace', '', function (h) {
+  }, S.readonly ? [] : [[it.published ? 'إخفاء من EduSpace' : 'نشر في EduSpace', '', function (h) {
     it.published = !it.published; change(R.key, (it.published ? 'نشر ' : 'إخفاء ') + it.code); h.close(); draw();
   }, 'eye']]);
 }
