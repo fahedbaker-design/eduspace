@@ -1,8 +1,8 @@
-/* EduSpace offline — 0.4: linked to EduSpace (read only: «تنزيل بياناتي» brings the real courses; editing returns with two-way sync); tips on round buttons. 0.2: the approved style (handoff/brand_rules.md); 0.1: demo data, simulated sync.
+/* EduSpace offline — 0.5: two-way sync — every change is a record in the outbox (grade, section, publish, removal) with the value it started from; «مزامنة الآن» sends them, then downloads; a cell changed in both places comes back as a conflict to decide. 0.4: linked to EduSpace (read only: «تنزيل بياناتي» brings the real courses; editing returns with two-way sync); tips on round buttons. 0.2: the approved style (handoff/brand_rules.md); 0.1: demo data, simulated sync.
  * Everything is kept on the device (IndexedDB); every change is written to an outbox that the sync sends later.
  * Views: home (courses) · course: students | grades | submissions · sheets: sync, export, bulk, backup. */
 'use strict';
-var VERSION = '0.4.1';
+var VERSION = '0.5';
 var $ = function (s, r) { return (r || document).querySelector(s); };
 var ICON = {
   sync: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
@@ -45,7 +45,35 @@ function idb() {
 function kvGet(k) { return idb().then(function (d) { return new Promise(function (ok, no) { var q = d.transaction('kv').objectStore('kv').get(k); q.onsuccess = function () { ok(q.result); }; q.onerror = function () { no(q.error); }; }); }); }
 function kvPut(k, v) { return idb().then(function (d) { return new Promise(function (ok, no) { var t = d.transaction('kv', 'readwrite'); t.objectStore('kv').put(v, k); t.oncomplete = ok; t.onerror = function () { no(t.error); }; }); }); }
 function persist() { clearTimeout(persist.h); persist.h = setTimeout(function () { kvPut('state', S); }, 250); }
-function change(course, text) { S.outbox.push({ at: Date.now(), course: course, text: text }); persist(); syncChip(); }
+/* one record per cell: k 'g' grade · 'sec' section · 'pub' publish · 'del' removed student. w = the value it started from. */
+function same(a, b) { return (a == null || a === '' ? null : a) === (b == null || b === '' ? null : b); }
+function rec(course, k, i, s, v, was, text) {
+  var id = k + '|' + course + '|' + (i || '') + '|' + (s || ''), ex = null, at = -1;
+  S.outbox.forEach(function (o, x) { if (o.id === id) { ex = o; at = x; } });
+  if (ex) {
+    ex.v = v; ex.text = text; ex.at = Date.now(); delete ex.cf; delete ex.cur; delete ex.err;
+    if (k !== 'del' && k !== 'pub' && same(ex.v, ex.w)) S.outbox.splice(at, 1);
+  } else if (k === 'del' || k === 'pub' || !same(v, was)) {
+    S.seq = (S.seq || 0) + 1;
+    S.outbox.push({ id: id, n: S.seq, at: Date.now(), course: course, k: k, i: i || '', s: s || '', v: v, w: was == null ? null : was, text: text });
+  }
+}
+function change() { persist(); syncChip(); }
+/* the local changes not yet sent, on top of data that has just come down */
+function applyOutbox(data) {
+  S.outbox.forEach(function (o) {
+    var d = data[o.course]; if (!d) return;
+    if (o.k === 'g') { var g = d.grades[o.i] = d.grades[o.i] || {}; if (o.v == null) delete g[o.s]; else g[o.s] = o.v; }
+    else if (o.k === 'sec') { if (o.v) d.secs[o.s] = o.v; else delete d.secs[o.s]; }
+    else if (o.k === 'pub') d.items.forEach(function (it) { if (it.id === o.i) it.published = o.v; });
+    else if (o.k === 'del') { delete d.students[o.s]; delete d.secs[o.s]; }
+  });
+}
+function fin(d, itId, sid) {      /* the grade after the late penalty, as EduSpace counts it */
+  var v = (d.grades[itId] || {})[sid]; if (v == null) return null;
+  var p = ((d.pens || {})[itId] || {})[sid] || 0;
+  return Math.round(v * (100 - p)) / 100;
+}
 
 /* ===================== demo data (invented names: this repository is public) ===================== */
 function demo() {
@@ -123,8 +151,9 @@ function parseCode(code) {
   var m = /^ES1\.([0-9a-f]{64})\.([A-Za-z0-9_-]{20,})$/.exec(String(code || '').replace(/\s/g, ''));
   return m ? { t: m[1], url: 'https://script.google.com/macros/s/' + m[2] + '/exec' } : null;
 }
-function api(link, op) {
-  return fetch(link.url, { method: 'POST', body: JSON.stringify({ t: link.t, op: op }) })
+function api(link, op, extra) {
+  var body = { t: link.t, op: op }; if (extra) Object.keys(extra).forEach(function (k) { body[k] = extra[k]; });
+  return fetch(link.url, { method: 'POST', body: JSON.stringify(body) })
     .catch(function () { throw new Error('تعذّر الوصول إلى خدمة الربط. تأكد من الإنترنت، ومن أنك فتحت رابط الخدمة من اللوحة مرة واحدة وسمحت بالإذن.'); })
     .then(function (r) {
       if (!r.ok) throw new Error('ردّت خدمة الربط برمز ' + r.status + '. افتح رابطها من اللوحة («تطبيق الآيباد» ← «فتح خدمة الربط») وتأكد أنها تعرض {"ok":true}.');
@@ -156,27 +185,49 @@ function pull() {
     x.courses.forEach(function (c) {
       courses.push({ key: c.key, code: c.code, name: c.name, sem: c.sem, color: c.color });
       var st = {}; c.students.forEach(function (s) { st[s.id] = s; });
-      data[c.key] = { students: st, secs: c.secs || {}, grades: c.grades || {},
+      data[c.key] = { students: st, secs: c.secs || {}, grades: c.grades || {}, pens: c.pens || {},
         items: c.items.map(function (it) { it.sub = (c.subs || {})[it.id] || {}; return it; }) };
     });
-    S = { v: 2, demo: false, readonly: true, link: S.link, lastSync: x.at, courses: courses, data: data, outbox: [] };
+    var keep = S.demo ? [] : (S.outbox || []);
+    S = { v: 2, demo: false, readonly: false, link: S.link, lastSync: x.at, courses: courses, data: data, outbox: keep, seq: S.seq || 0 };
+    applyOutbox(data);
     persist(); return x;
   });
+}
+/* send the outbox, then download; returns { sent, conflicts, errors } */
+function syncNow() {
+  if (!S.link || S.demo) return Promise.reject(new Error('اربط الجهاز أولًا'));
+  if (!navigator.onLine) return Promise.reject(new Error('لا إنترنت الآن. التغييرات محفوظة وستُرسل عند الاتصال.'));
+  var send = S.outbox.filter(function (o) { return !o.cf; }), sum = { sent: 0, conflicts: 0, errors: 0 };
+  var p = send.length ? api(S.link, 'push', { changes: send.map(function (o) { return { n: o.n, k: o.k, c: o.course, i: o.i, s: o.s, v: o.v, w: o.w, f: !!o.f }; }) })
+    : Promise.resolve({ results: [] });
+  return p.then(function (res) {
+    res.results.forEach(function (r) {
+      var at = -1; S.outbox.forEach(function (o, x) { if (o.n === r.n) at = x; });
+      if (at < 0) return;
+      var o = S.outbox[at];
+      if (r.st === 'ok') { S.outbox.splice(at, 1); sum.sent++; }
+      else if (r.st === 'conflict') { o.cf = true; o.cur = r.cur == null ? null : r.cur; sum.conflicts++; }
+      else { o.err = r.err || 'خطأ'; sum.errors++; }
+    });
+    persist();
+    return pull();
+  }).then(function () { return sum; });
 }
 function openLink() {
   sheet('الربط بـ EduSpace', function (b) {
     if (S.link) {
       b.appendChild(el('p', 'n14', 'هذا الجهاز مربوط باسم «' + (S.link.device || 'الآيباد') + '». آخر تنزيل: ' + when(S.lastSync) + '.'));
-      b.appendChild(el('p', 'n12', 'في هذه المرحلة تنزل بياناتك للعرض والتصدير فقط. التعديل والإرسال إلى EduSpace يأتيان مع المزامنة في الاتجاهين.'));
+      b.appendChild(el('p', 'n12', 'تعدّل هنا بلا إنترنت، و«مزامنة الآن» ترسل تعديلاتك إلى EduSpace ثم تنزّل آخر ما فيها.'));
       return;
     }
     b.appendChild(el('p', 'n14', 'في اللوحة: بطاقة «تطبيق الآيباد» ← «إنشاء رمز ربط». انسخ الرمز والصقه هنا.'));
     var f = el('div', 'field'); f.appendChild(el('label', '', 'رمز الربط'));
     var t = el('textarea', 'inp'); t.id = 'lk-code'; t.dir = 'ltr'; t.style.cssText = 'min-height:96px;border-radius:18px;padding:12px 16px;font-size:14px;width:100%';
     f.appendChild(t); b.appendChild(f);
-  }, S.link ? [['تنزيل بياناتي الآن', '', function (h) {
-    h.body.appendChild(el('p', 'n14', 'جارٍ التنزيل…'));
-    pull().then(function (x) { h.close(); go('home'); say('نزلت ' + pl(x.courses.length, 'مساق', 'مساقات') + ' من EduSpace.'); })
+  }, S.link ? [['مزامنة الآن', '', function (h) {
+    h.body.appendChild(el('p', 'n14', 'جارٍ المزامنة…'));
+    (S.demo ? pull() : syncNow()).then(function () { h.close(); go('home'); say('تمت المزامنة مع EduSpace.'); })
       .catch(function (e) { h.close(); fail('تعذّر التنزيل', e); });
   }, 'import'], ['إلغاء الربط', 'sec', function (h) {
     if (!confirm('إلغاء ربط هذا الجهاز؟ تبقى البيانات النازلة عليه، ولا يتصل بعدها حتى تربطه برمز جديد.')) return;
@@ -197,16 +248,39 @@ function openSync() {
     b.appendChild(el('p', 'n14', navigator.onLine ? 'متصل بالإنترنت.' : 'لا إنترنت الآن. تعمل كالمعتاد، وكل التغييرات محفوظة على الجهاز إلى أن تتصل.'));
     b.appendChild(el('p', 'n14', 'آخر مزامنة: ' + when(S.lastSync)));
     if (S.demo) b.appendChild(el('p', 'banner', 'بيانات تجريبية: المزامنة هنا محاكاة. اربط الجهاز بـ EduSpace من زر النقاط الثلاث.'));
-    else if (S.readonly) b.appendChild(el('p', 'banner', 'بياناتك من EduSpace للعرض والتصدير. «مزامنة الآن» تنزّل آخر ما فيها.'));
+    var cfs = S.outbox.filter(function (o) { return o.cf; });
+    if (cfs.length) {
+      b.appendChild(el('p', 'lab', 'تعارض: تغيّرت هذه في EduSpace أيضًا بعد آخر تنزيل (' + cfs.length + ')'));
+      cfs.forEach(function (o) {
+        var r = el('div', 'ch'); r.style.flexWrap = 'wrap';
+        r.appendChild(el('span', 'tag', courseOf(o.course).code)); r.appendChild(el('span', 'sp', o.text));
+        r.appendChild(el('span', 'n12', 'قيمتك ' + (o.v == null || o.v === '' ? '—' : o.v) + ' · في EduSpace ' + (o.cur == null || o.cur === '' ? '—' : o.cur)));
+        var mine = btn('اعتمد قيمتي', 'sec', function () { o.f = true; delete o.cf; persist(); document.querySelector('.ov').remove(); openSync(); });
+        var theirs = btn('خذ قيمة EduSpace', 'sec', function () {
+          S.outbox = S.outbox.filter(function (x) { return x !== o; });
+          var d = S.data[o.course];
+          if (d && o.k === 'g') { var g = d.grades[o.i] = d.grades[o.i] || {}; if (o.cur == null) delete g[o.s]; else g[o.s] = o.cur; }
+          if (d && o.k === 'sec') { if (o.cur) d.secs[o.s] = o.cur; else delete d.secs[o.s]; }
+          persist(); document.querySelector('.ov').remove(); openSync(); draw();
+        });
+        r.appendChild(mine); r.appendChild(theirs); b.appendChild(r);
+      });
+    }
     b.appendChild(el('p', 'lab', S.outbox.length ? 'بانتظار الإرسال (' + S.outbox.length + ')' : 'لا تغييرات بانتظار الإرسال'));
     S.outbox.slice(-40).reverse().forEach(function (c) {
-      var r = el('div', 'ch'); r.appendChild(el('span', 'tag', courseOf(c.course).code)); r.appendChild(el('span', 'sp', c.text)); r.appendChild(el('span', 'n12', new Date(c.at).toLocaleTimeString('ar-EG-u-nu-latn', { hour: '2-digit', minute: '2-digit' }))); b.appendChild(r);
+      if (c.cf) return;
+      var r = el('div', 'ch'); r.appendChild(el('span', 'tag', courseOf(c.course).code)); r.appendChild(el('span', 'sp', c.text + (c.err ? ' · لم يُرسل: ' + c.err : ''))); r.appendChild(el('span', 'n12', new Date(c.at).toLocaleTimeString('ar-EG-u-nu-latn', { hour: '2-digit', minute: '2-digit' }))); b.appendChild(r);
     });
   }, [['مزامنة الآن', '', function (h) {
     if (!navigator.onLine) { say('لا إنترنت الآن. التغييرات محفوظة وستُرسل عند الاتصال.'); return; }
     if (S.link && !S.demo) {
-      h.body.textContent = 'جارٍ التنزيل…';
-      pull().then(function (x) { h.close(); draw(); say('حُدّثت البيانات من EduSpace.'); }).catch(function (e) { h.close(); fail('تعذّرت المزامنة', e); });
+      h.body.textContent = 'جارٍ الإرسال ثم التنزيل…';
+      syncNow().then(function (x) {
+        h.close(); draw();
+        say((x.sent ? 'أُرسل ' + pl(x.sent, 'تغيير', 'تغييرات') + ' وحُدّثت البيانات' : 'حُدّثت البيانات من EduSpace') +
+          (x.conflicts ? ' · ' + pl(x.conflicts, 'تعارض', 'تعارضات') + ': افتح المزامنة لتقرر' : '') + (x.errors ? ' · لم يُرسل ' + x.errors : '') + '.');
+        if (x.conflicts) openSync();
+      }).catch(function (e) { h.close(); fail('تعذّرت المزامنة', e); });
       return;
     }
     h.body.textContent = 'جارٍ الإرسال…';
@@ -226,7 +300,7 @@ function openMenu() {
     var lb = btn(S.link ? 'الربط بـ EduSpace · مربوط' : 'الربط بـ EduSpace', S.link ? 'sec' : '', function () { document.querySelector('.ov').remove(); openLink(); }, 'link');
     lb.style.marginInlineEnd = '8px'; b.appendChild(lb);
     b.appendChild(btn('حفظ نسخة احتياطية', 'sec', function () {
-      share(new Blob([JSON.stringify(S)], { type: 'application/json' }), 'EduSpace-نسخة-' + new Date().toISOString().slice(0, 10) + '.json');
+      share(new Blob([JSON.stringify(S)], { type: 'application/json' }), 'EduSpace-backup-' + new Date().toISOString().slice(0, 10) + '.json');
     }, 'save'));
     var f = el('div', 'field'); f.style.marginTop = '12px'; f.appendChild(el('span', 'lab', 'استعادة من نسخة'));
     var i = el('input'); i.type = 'file'; i.accept = '.json,application/json'; f.appendChild(i); b.appendChild(f);
@@ -252,14 +326,14 @@ var OLDCOL = { '#2563eb': '#6f7ee0', '#16a34a': '#74a886', '#9333ea': '#9b7cc9',
 function family(color) { return FAMILY[OLDCOL[color] || color] || FAMILY['#6f7ee0']; }
 function tint(node, color) { var f = family(color); node.style.setProperty('--t', f[0]); node.style.setProperty('--m', f[1]); node.style.setProperty('--d', f[2]); return node; }
 function brand() { var b = el('span', 'brand'); b.innerHTML = 'EduSpace<sup>™</sup>'; return b; }
+/* the top bar: sync on the right, then back and the menu, the EduSpace™ mark on the far left */
 function topBar(backFn) {
   var t = el('div', 'bar');
-  var first = backFn ? ico('back', 'رجوع', backFn) : ico('more', 'البيانات والنسخ الاحتياطي', openMenu);
-  if (!backFn) first.className = 'ico dk';
-  t.appendChild(first);
-  var mid = el('div', 'mid'); mid.appendChild(brand()); t.appendChild(mid);
   var c = el('button', 'sync'); c.id = 'sync'; c.type = 'button'; c.onclick = openSync; t.appendChild(c);
-  if (backFn) t.appendChild(ico('more', 'البيانات والنسخ الاحتياطي', openMenu));
+  t.appendChild(el('span', 'sp'));
+  if (backFn) t.appendChild(ico('back', 'رجوع', backFn));
+  t.appendChild(ico('more', 'البيانات والنسخ الاحتياطي', openMenu));
+  var b = brand(); b.style.marginInlineStart = '8px'; t.appendChild(b);
   return t;
 }
 function title(app, main, sub) { var h = el('h1', '', main); if (sub) h.appendChild(el('span', '', sub)); app.appendChild(h); }
@@ -321,7 +395,6 @@ function drawCourse(app) {
   tint(document.body, c.color);
   app.appendChild(topBar(function () { go('home'); }));
   title(app, c.code, c.name);
-  if (S.readonly) app.appendChild(el('p', 'banner', 'للعرض والتصدير: التعديل والإرسال إلى EduSpace يأتيان مع المزامنة في الاتجاهين.'));
   var tabs = el('div', 'pills');
   [['students', 'الطلاب', 'users'], ['grades', 'الدرجات', 'grades'], ['subs', 'التسليمات', 'inbox']].forEach(function (t) {
     var b = el('button', 'pill' + (R.tab === t[0] ? ' on' : '')); b.type = 'button'; b.innerHTML = svg(t[2]); b.appendChild(document.createTextNode(t[1]));
@@ -351,7 +424,7 @@ function toolbar(app, d, extra) {
   q.className = 'inp'; q.style.cssText = 'flex:1;min-width:180px;background:#fff;box-shadow:inset 0 0 0 1px var(--line)';
   q.oninput = function () { UI.q = q.value; clearTimeout(q.h); q.h = setTimeout(function () { draw(); var x = $('input[type=search]'); x.focus(); x.setSelectionRange(x.value.length, x.value.length); }, 250); };
   r.appendChild(q);
-  var sel = el('select', 'inp'); sel.style.cssText = 'background:#fff;box-shadow:inset 0 0 0 1px var(--line)';
+  var sel = el('select', 'inp'); sel.style.cssText = 'background-color:#fff;box-shadow:inset 0 0 0 1px var(--line)';
   [['', 'كل الشعب']].concat(secsOf(d).map(function (s) { return [s, 'الشعبة ' + s]; })).forEach(function (o) { var x = el('option', '', o[1]); x.value = o[0]; sel.appendChild(x); });
   sel.value = UI.secF; sel.onchange = function () { UI.secF = sel.value; draw(); };
   r.appendChild(sel);
@@ -368,15 +441,15 @@ function drawStudents(app, d) {
   all.checked = nsel && nsel === list.length; all.indeterminate = nsel > 0 && nsel < list.length;
   all.onchange = function () { list.forEach(function (s) { if (all.checked) UI.sel[s.id] = 1; else delete UI.sel[s.id]; }); draw(); };
   ck.appendChild(all); head.appendChild(ck);
-  ['الرقم الجامعي', 'اسم الطالب', 'الشعبة', 'المعدل', 'الهاتف'].forEach(function (h) { head.appendChild(el('th', '', h)); });
+  ['الرقم الجامعي', 'اسم الطالب', 'الشعبة', 'المعدل', 'الهاتف', 'البريد'].forEach(function (h) { head.appendChild(el('th', '', h)); });
   var th = el('thead'); th.appendChild(head); t.appendChild(th);
   var tb = el('tbody');
-  if (!list.length) { var e = el('tr'), td = el('td', 'empty', 'لا نتائج.'); td.colSpan = 6; e.appendChild(td); tb.appendChild(e); }
+  if (!list.length) { var e = el('tr'), td = el('td', 'empty', 'لا نتائج.'); td.colSpan = 7; e.appendChild(td); tb.appendChild(e); }
   var groups = {}; list.forEach(function (s) { var k = UI.group ? (d.secs[s.id] || '') : '*'; (groups[k] = groups[k] || []).push(s); });
   Object.keys(groups).sort(function (a, b) { return !a ? 1 : !b ? -1 : secCmp(a, b); }).forEach(function (k) {
     var g = groups[k];
     if (UI.group) {
-      var gr = el('tr', 'grp' + (UI.shut[k] ? ' shut' : '')), gtd = el('td'); gtd.colSpan = 6;
+      var gr = el('tr', 'grp' + (UI.shut[k] ? ' shut' : '')), gtd = el('td'); gtd.colSpan = 7;
       var gh = el('div', 'gh'), gk = el('input'); gk.type = 'checkbox';
       var n = g.filter(function (s) { return UI.sel[s.id]; }).length; gk.checked = n && n === g.length; gk.indeterminate = n > 0 && n < g.length;
       gk.onclick = function (e) { e.stopPropagation(); };
@@ -391,7 +464,7 @@ function drawStudents(app, d) {
       k2.onchange = function () { if (k2.checked) UI.sel[s.id] = 1; else delete UI.sel[s.id]; draw(); };
       c0.appendChild(k2); tr.appendChild(c0);
       tr.appendChild(el('td', 'ltr', s.id)); tr.appendChild(el('td', '', s.name)); tr.appendChild(el('td', '', d.secs[s.id] || '—'));
-      tr.appendChild(el('td', '', s.gpa == null ? '' : fmt(s.gpa))); tr.appendChild(el('td', 'ltr', s.phone || ''));
+      tr.appendChild(el('td', '', s.gpa == null ? '' : fmt(s.gpa))); tr.appendChild(el('td', 'ltr', s.phone || '')); tr.appendChild(el('td', 'ltr', s.email || ''));
       tb.appendChild(tr);
     });
   });
@@ -412,8 +485,8 @@ function bulkBar(app, d) {
   b.appendChild(btn('تصدير', '', function () { openExport(d, ids); }, 'export'));
   b.appendChild(btn('حذف', 'dz', function () {
     if (!confirm('حذف ' + pl(ids.length, 'طالب', 'طالبًا') + ' من هذا المساق؟')) return;
-    ids.forEach(function (id) { delete d.students[id]; delete d.secs[id]; }); UI.sel = {};
-    change(R.key, 'حذف ' + pl(ids.length, 'طالب', 'طالبًا')); draw();
+    ids.forEach(function (id) { rec(R.key, 'del', '', id, true, null, 'حذف ' + d.students[id].name); delete d.students[id]; delete d.secs[id]; }); UI.sel = {};
+    change(); draw();
   }, 'del'));
   b.appendChild(btn('إلغاء', '', function () { UI.sel = {}; draw(); }, 'x'));
   app.appendChild(b);
@@ -425,8 +498,9 @@ function bulkSection(d, ids) {
     var dl = el('datalist'); dl.id = 'bs-l'; secsOf(d).forEach(function (s) { var o = el('option'); o.value = s; dl.appendChild(o); }); f.appendChild(dl);
     b.appendChild(f);
   }, [['حفظ', '', function (h) {
-    var v = $('#bs').value.trim(); ids.forEach(function (id) { if (v) d.secs[id] = v; else delete d.secs[id]; });
-    change(R.key, (v ? 'الشعبة ' + v + ' لـ ' : 'إخراج من الشعب: ') + pl(ids.length, 'طالب', 'طالبًا')); h.close(); draw();
+    var v = $('#bs').value.trim();
+    ids.forEach(function (id) { rec(R.key, 'sec', '', id, v, d.secs[id] || '', 'الشعبة ' + (v || '—') + ' · ' + d.students[id].name); if (v) d.secs[id] = v; else delete d.secs[id]; });
+    change(); h.close(); draw();
   }]]);
 }
 function bulkGrade(d, ids, preset) {
@@ -440,8 +514,12 @@ function bulkGrade(d, ids, preset) {
     var it = d.items.filter(function (x) { return x.id === $('#bg-i').value; })[0], v = num($('#bg-v').value), keep = $('#bg-k').checked;
     if (v != null && (isNaN(v) || v < 0 || v > it.max)) { say('الدرجة بين 0 و' + it.max); return; }
     var g = d.grades[it.id] = d.grades[it.id] || {}, n = 0, kept = 0;
-    ids.forEach(function (id) { if (keep && g[id] != null) { kept++; return; } if (v == null) delete g[id]; else g[id] = v; n++; });
-    change(R.key, it.code + ': ' + (v == null ? 'مسح' : v) + ' لـ ' + pl(n, 'طالب', 'طالبًا'));
+    ids.forEach(function (id) {
+      if (keep && g[id] != null) { kept++; return; }
+      rec(R.key, 'g', it.id, id, v, g[id] == null ? null : g[id], it.code + ' · ' + d.students[id].name + ': ' + (v == null ? 'مسح' : v));
+      if (v == null) delete g[id]; else g[id] = v; n++;
+    });
+    change();
     h.close(); draw(); say('رُصد لـ ' + pl(n, 'طالب', 'طالبًا') + (kept ? '، وبقيت ' + kept + ' درجة كما هي' : ''));
   }]]);
 }
@@ -469,14 +547,16 @@ function drawGrades(app, d) {
     d.items.forEach(function (it) {
       var g = (d.grades[it.id] = d.grades[it.id] || {}), td = el('td', 'g'), inp = el('input', 'cell');
       inp.value = fmt(g[s.id]); inp.inputMode = 'decimal'; inp.setAttribute('aria-label', it.code + ' ' + s.name);
-      if (S.readonly) { inp.readOnly = true; inp.tabIndex = -1; }
-      if (g[s.id] != null) tot += g[s.id];
+      var pen = ((d.pens || {})[it.id] || {})[s.id];
+      if (pen) { inp.title = 'خصم تأخير ' + pen + '%: تُحسب ' + fmt(fin(d, it.id, s.id)); inp.style.boxShadow = 'inset 0 -3px 0 var(--d)'; }
+      if (g[s.id] != null) tot += fin(d, it.id, s.id);
       inp.onchange = function () {
         var v = num(inp.value);
         if (v != null && (isNaN(v) || v < 0 || v > it.max)) { say('الدرجة بين 0 و' + it.max); inp.value = fmt(g[s.id]); return; }
+        rec(R.key, 'g', it.id, s.id, v, g[s.id] == null ? null : g[s.id], it.code + ' · ' + s.name + ': ' + (v == null ? 'مسح' : v));
         if (v == null) delete g[s.id]; else g[s.id] = v;
-        inp.classList.add('dirty'); change(R.key, it.code + ' · ' + s.name + ': ' + (v == null ? 'مسح' : v));
-        var sum = 0; d.items.forEach(function (x) { var y = (d.grades[x.id] || {})[s.id]; if (y != null) sum += y; }); tr.lastChild.textContent = fmt(sum);
+        inp.classList.add('dirty'); change();
+        var sum = 0; d.items.forEach(function (x) { var y = fin(d, x.id, s.id); if (y != null) sum += y; }); tr.lastChild.textContent = fmt(sum);
       };
       inp.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); var nx = tr.nextSibling && tr.nextSibling.children[d.items.indexOf(it) + 1]; if (nx) nx.firstChild.focus(); } };
       td.appendChild(inp); tr.appendChild(td);
@@ -485,7 +565,7 @@ function drawGrades(app, d) {
     tb.appendChild(tr);
   });
   t.appendChild(tb); tw.appendChild(t); app.appendChild(tw);
-  if (!S.readonly) app.appendChild(el('p', 'n12', 'اضغط عنوان أي عمود لنشره في EduSpace أو إخفائه. «نشر» يخص صفحة الطالب في EduSpace فقط؛ ولـ Moodle استعمل «تصدير».'));
+  app.appendChild(el('p', 'n12', 'اضغط عنوان أي عمود لنشره في EduSpace أو إخفائه. «نشر» يخص صفحة الطالب في EduSpace فقط؛ ولـ Moodle استعمل «تصدير».'));
 }
 function itemSheet(d, it) {
   var g = d.grades[it.id] || {}, ids = Object.keys(d.students), done = ids.filter(function (id) { return g[id] != null; }).length;
@@ -495,8 +575,8 @@ function itemSheet(d, it) {
     b.appendChild(big); b.appendChild(prog(xs.total, xs.sub, xs.graded)); var lg = legend(); lg.style.margin = '8px 0 12px'; b.appendChild(lg);
     b.appendChild(el('p', 'n14', it.published ? 'منشور: يرى الطلاب درجاتهم فيه في EduSpace بعد المزامنة.' : 'غير منشور: لا يراه الطلاب في EduSpace.'));
     if (it.source === 'moodle') b.appendChild(el('p', 'n12', 'تكليف مستورد من Moodle. نشره هنا يُظهره للطلاب في EduSpace أيضًا، ولا يرسل شيئًا إلى Moodle.'));
-  }, S.readonly ? [] : [[it.published ? 'إخفاء من EduSpace' : 'نشر في EduSpace', '', function (h) {
-    it.published = !it.published; change(R.key, (it.published ? 'نشر ' : 'إخفاء ') + it.code); h.close(); draw();
+  }, [[it.published ? 'إخفاء من EduSpace' : 'نشر في EduSpace', '', function (h) {
+    it.published = !it.published; rec(R.key, 'pub', it.id, '', it.published, null, (it.published ? 'نشر ' : 'إخفاء ') + it.code); change(); h.close(); draw();
   }, 'eye']]);
 }
 function importInfo() {
@@ -539,16 +619,16 @@ function openExport(d, ids) {
     var rows;
     if (fmtSel === 'moodle') {
       rows = [['اسم المستخدم', 'البريد الإلكتروني'].concat(pick.map(function (it) { return it.title; }))];
-      who.forEach(function (s) { rows.push([s.id, s.email || ''].concat(pick.map(function (it) { return fmt((d.grades[it.id] || {})[s.id]); }))); });
+      who.forEach(function (s) { rows.push([s.id, s.email || ''].concat(pick.map(function (it) { return fmt(fin(d, it.id, s.id)); }))); });
     } else {
       var of = pick.reduce(function (a, it) { return a + it.max; }, 0);
       rows = [['الرقم الجامعي', 'الاسم', 'الشعبة'].concat(pick.map(function (it) { return it.code + ' ' + it.title + ' (' + it.max + ')'; })).concat(['المجموع (' + of + ')', 'النسبة'])];
       who.forEach(function (s) {
-        var tot = 0, r = [s.id, s.name, d.secs[s.id] || ''].concat(pick.map(function (it) { var v = (d.grades[it.id] || {})[s.id]; if (v != null) tot += v; return fmt(v); }));
+        var tot = 0, r = [s.id, s.name, d.secs[s.id] || ''].concat(pick.map(function (it) { var v = fin(d, it.id, s.id); if (v != null) tot += v; return fmt(v); }));
         rows.push(r.concat([fmt(tot), of ? fmt(tot / of * 100) + '%' : '']));
       });
     }
-    share(new Blob([csvOf(rows)], { type: 'text/csv' }), c.code.replace(/\s/g, '') + '-' + (fmtSel === 'moodle' ? 'moodle' : 'كشف') + '-' + new Date().toISOString().slice(0, 10) + '.csv');
+    share(new Blob([csvOf(rows)], { type: 'text/csv' }), c.code.replace(/\s/g, '') + '-' + (fmtSel === 'moodle' ? 'moodle' : 'gradesheet') + '-' + new Date().toISOString().slice(0, 10) + '.csv');
     h.close(); say('صُدّر ' + pl(who.length, 'طالب', 'طالبًا') + ' و' + pl(pick.length, 'تكليف', 'تكليفات') + ' (على الجهاز، بلا إنترنت).');
   }, 'export']]);
 }
