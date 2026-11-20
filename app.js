@@ -1,8 +1,8 @@
-/* EduSpace offline — 0.5: two-way sync — every change is a record in the outbox (grade, section, publish, removal) with the value it started from; «مزامنة الآن» sends them, then downloads; a cell changed in both places comes back as a conflict to decide. 0.4: linked to EduSpace (read only: «تنزيل بياناتي» brings the real courses; editing returns with two-way sync); tips on round buttons. 0.2: the approved style (handoff/brand_rules.md); 0.1: demo data, simulated sync.
+/* EduSpace offline — 0.5.1: the version next to the mark. 0.5: two-way sync — every change is a record in the outbox (grade, section, publish, removal) with the value it started from; «مزامنة الآن» sends them, then downloads; a cell changed in both places comes back as a conflict to decide. 0.4: linked to EduSpace (read only: «تنزيل بياناتي» brings the real courses; editing returns with two-way sync); tips on round buttons. 0.2: the approved style (handoff/brand_rules.md); 0.1: demo data, simulated sync.
  * Everything is kept on the device (IndexedDB); every change is written to an outbox that the sync sends later.
  * Views: home (courses) · course: students | grades | submissions · sheets: sync, export, bulk, backup. */
 'use strict';
-var VERSION = '0.5';
+var VERSION = '0.5.1';
 var $ = function (s, r) { return (r || document).querySelector(s); };
 var ICON = {
   sync: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
@@ -325,7 +325,7 @@ var FAMILY = { '#6f7ee0': ['#eceefc', '#b3bcf5', '#6f7ee0'], '#d97aa0': ['#fbeef
 var OLDCOL = { '#2563eb': '#6f7ee0', '#16a34a': '#74a886', '#9333ea': '#9b7cc9', '#ea580c': '#e08a5a', '#db2777': '#d97aa0', '#0891b2': '#6fa3b8', '#ca8a04': '#c49a2c', '#475569': '#7c879a' };
 function family(color) { return FAMILY[OLDCOL[color] || color] || FAMILY['#6f7ee0']; }
 function tint(node, color) { var f = family(color); node.style.setProperty('--t', f[0]); node.style.setProperty('--m', f[1]); node.style.setProperty('--d', f[2]); return node; }
-function brand() { var b = el('span', 'brand'); b.innerHTML = 'EduSpace<sup>™</sup>'; return b; }
+function brand() { var b = el('span', 'brand'); b.innerHTML = 'EduSpace<sup>™</sup>'; b.appendChild(el('span', 'ver', 'v' + VERSION)); return b; }
 /* the top bar: sync on the right, then back and the menu, the EduSpace™ mark on the far left */
 function topBar(backFn) {
   var t = el('div', 'bar');
