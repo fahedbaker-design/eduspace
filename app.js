@@ -1,8 +1,8 @@
-/* EduSpace offline — 0.5.1: the version next to the mark. 0.5: two-way sync — every change is a record in the outbox (grade, section, publish, removal) with the value it started from; «مزامنة الآن» sends them, then downloads; a cell changed in both places comes back as a conflict to decide. 0.4: linked to EduSpace (read only: «تنزيل بياناتي» brings the real courses; editing returns with two-way sync); tips on round buttons. 0.2: the approved style (handoff/brand_rules.md); 0.1: demo data, simulated sync.
+/* EduSpace offline — 0.5.2: round buttons on the right, the mark alone on the left; the sync state under the title; home cards at the bottom; the progress bar tells its layers on a tap; a new version reloads itself. 0.5.1: the version next to the mark. 0.5: two-way sync — every change is a record in the outbox (grade, section, publish, removal) with the value it started from; «مزامنة الآن» sends them, then downloads; a cell changed in both places comes back as a conflict to decide. 0.4: linked to EduSpace (read only: «تنزيل بياناتي» brings the real courses; editing returns with two-way sync); tips on round buttons. 0.2: the approved style (handoff/brand_rules.md); 0.1: demo data, simulated sync.
  * Everything is kept on the device (IndexedDB); every change is written to an outbox that the sync sends later.
  * Views: home (courses) · course: students | grades | submissions · sheets: sync, export, bulk, backup. */
 'use strict';
-var VERSION = '0.5.1';
+var VERSION = '0.5.2';
 var $ = function (s, r) { return (r || document).querySelector(s); };
 var ICON = {
   sync: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
@@ -326,25 +326,36 @@ var OLDCOL = { '#2563eb': '#6f7ee0', '#16a34a': '#74a886', '#9333ea': '#9b7cc9',
 function family(color) { return FAMILY[OLDCOL[color] || color] || FAMILY['#6f7ee0']; }
 function tint(node, color) { var f = family(color); node.style.setProperty('--t', f[0]); node.style.setProperty('--m', f[1]); node.style.setProperty('--d', f[2]); return node; }
 function brand() { var b = el('span', 'brand'); b.innerHTML = 'EduSpace<sup>™</sup>'; b.appendChild(el('span', 'ver', 'v' + VERSION)); return b; }
-/* the top bar: sync on the right, then back and the menu, the EduSpace™ mark on the far left */
+/* the top bar: the round buttons on the right (the menu first, then back), the EduSpace™ mark alone on the far left */
 function topBar(backFn) {
   var t = el('div', 'bar');
-  var c = el('button', 'sync'); c.id = 'sync'; c.type = 'button'; c.onclick = openSync; t.appendChild(c);
-  t.appendChild(el('span', 'sp'));
-  if (backFn) t.appendChild(ico('back', 'رجوع', backFn));
   t.appendChild(ico('more', 'البيانات والنسخ الاحتياطي', openMenu));
-  var b = brand(); b.style.marginInlineStart = '8px'; t.appendChild(b);
+  if (backFn) t.appendChild(ico('back', 'رجوع', backFn));
+  t.appendChild(el('span', 'sp'));
+  t.appendChild(brand());
   return t;
 }
-function title(app, main, sub) { var h = el('h1', '', main); if (sub) h.appendChild(el('span', '', sub)); app.appendChild(h); }
+/* the page title, and under it on the left the sync state */
+function title(app, main, sub) {
+  var h = el('h1', '', main); if (sub) h.appendChild(el('span', '', sub)); app.appendChild(h);
+  var r = el('div', 'syncrow'), c = el('button', 'sync'); c.id = 'sync'; c.type = 'button'; c.onclick = openSync; r.appendChild(c); app.appendChild(r);
+}
 /* progress: three layered rounded rectangles — hatched track, submitted, graded */
 function prog(total, sub, graded, small) {
   var p = el('div', 'prog' + (small ? ' sm' : '')), pc = function (n) { return total ? Math.max(n ? 4 : 0, Math.round(n / total * 100)) : 0; };
   var a = el('i', 's'); a.style.width = pc(sub) + '%'; p.appendChild(a);
   var b = el('i', 'g'); b.style.width = pc(graded) + '%'; p.appendChild(b);
-  p.setAttribute('role', 'img'); p.setAttribute('aria-label', 'سلّم ' + sub + ' وصُحّح ' + graded + ' من ' + total);
+  var tip = 'سلّم ' + sub + ' · صُحّح ' + graded + ' · لم يصل ' + Math.max(0, total - sub) + ' · من ' + total;
+  p.setAttribute('role', 'button'); p.setAttribute('aria-label', tip); p.setAttribute('data-tip', tip); p.tabIndex = 0;
+  p.onclick = function (e) {        /* a tap shows what the layers mean; another tap (or a tap elsewhere) hides it */
+    e.stopPropagation();
+    var on = p.classList.contains('tipon');
+    [].forEach.call(document.querySelectorAll('.prog.tipon'), function (x) { x.classList.remove('tipon'); });
+    if (!on) p.classList.add('tipon');
+  };
   return p;
 }
+document.addEventListener('click', function () { [].forEach.call(document.querySelectorAll('.prog.tipon'), function (x) { x.classList.remove('tipon'); }); });
 function itemStats(d, it) {
   var ids = Object.keys(d.students), g = d.grades[it.id] || {}, s = it.sub || {};
   var graded = ids.filter(function (id) { return g[id] != null; }).length;
@@ -354,13 +365,6 @@ function itemStats(d, it) {
 function currentItem(d) {   /* the newest item that still has work to grade, else the last one */
   var open = d.items.filter(function (it) { var x = itemStats(d, it); return x.sub > x.graded; });
   return open[open.length - 1] || d.items[d.items.length - 1];
-}
-function legend(cls) {
-  var l = el('div', 'legend');
-  [['var(--hatch)', 'لم يصل'], ['', 'سلّم'], ['', 'صُحّح']].forEach(function (x, i) {
-    var s = el('span', '', x[1]); s.style.setProperty('--c', i === 0 ? '#ebecf1' : i === 1 ? 'var(--m)' : 'var(--d)'); l.appendChild(s);
-  });
-  return l;
 }
 function drawHome(app) {
   tint(document.body, '#7c879a');
@@ -386,7 +390,7 @@ function drawHome(app) {
     g.appendChild(k);
   });
   app.appendChild(g);
-  var lg = legend(); lg.style.marginTop = '12px'; app.appendChild(lg);
+  app.classList.add('home');       /* the cards sit at the bottom; the space between the title and the cards grows */
 }
 
 /* ===================== course ===================== */
@@ -572,7 +576,7 @@ function itemSheet(d, it) {
   sheet(it.code + ' · ' + it.title, function (b) {
     var r = el('div', 'row'); r.appendChild(srcTag(it)); r.appendChild(el('span', 'n14', 'من ' + it.max)); b.appendChild(r);
     var xs = itemStats(d, it), big = el('div', 'big', String(xs.graded)); big.appendChild(el('small', '', ' / ' + xs.sub + ' صُحّح من ' + xs.total)); big.style.margin = '12px 0';
-    b.appendChild(big); b.appendChild(prog(xs.total, xs.sub, xs.graded)); var lg = legend(); lg.style.margin = '8px 0 12px'; b.appendChild(lg);
+    b.appendChild(big); var pg = prog(xs.total, xs.sub, xs.graded); pg.style.marginBottom = '12px'; b.appendChild(pg);
     b.appendChild(el('p', 'n14', it.published ? 'منشور: يرى الطلاب درجاتهم فيه في EduSpace بعد المزامنة.' : 'غير منشور: لا يراه الطلاب في EduSpace.'));
     if (it.source === 'moodle') b.appendChild(el('p', 'n12', 'تكليف مستورد من Moodle. نشره هنا يُظهره للطلاب في EduSpace أيضًا، ولا يرسل شيئًا إلى Moodle.'));
   }, [[it.published ? 'إخفاء من EduSpace' : 'نشر في EduSpace', '', function (h) {
@@ -635,13 +639,19 @@ function openExport(d, ids) {
 
 /* ===================== draw / start ===================== */
 function draw() {
-  var app = $('#app'), y = window.scrollY; app.textContent = '';
+  var app = $('#app'), y = window.scrollY; app.textContent = ''; app.classList.remove('home');
   if (R.view === 'course' && S.data[R.key]) drawCourse(app); else drawHome(app);
   syncChip(); window.scrollTo(0, y);
 }
 addEventListener('online', syncChip); addEventListener('offline', syncChip);
 addEventListener('hashchange', function () { fromHash(); draw(); });
-if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js').catch(function () {});
+if ('serviceWorker' in navigator) {
+  var hadSW = !!navigator.serviceWorker.controller;
+  navigator.serviceWorker.register('sw.js').then(function (r) { try { r.update(); } catch (e) { /* offline */ } }).catch(function () {});
+  /* a new version took over: reload once, so it shows now and not at the next opening */
+  navigator.serviceWorker.addEventListener('controllerchange', function () { if (hadSW && !window.__reloaded) { window.__reloaded = true; location.reload(); } });
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) navigator.serviceWorker.getRegistration().then(function (r) { if (r) r.update(); }).catch(function () {}); });
+}
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
 kvGet('state').then(function (s) { S = (s && s.v >= 2) ? s : demo(); if (S !== s) persist(); fromHash(); draw(); })
   .catch(function (e) { $('#app').textContent = 'تعذّر فتح التخزين على الجهاز: ' + e.message; });

@@ -1,4 +1,4 @@
-/* EduSpace offline — styles 0.5: the mark 16, selects as tall as buttons; 0.4: tips on round buttons; 0.3: course colours in three tones (--t light, --m middle, --d deep); 0.2: the approved style (handoff/brand_rules.md).
+/* EduSpace offline — styles 0.5.2: home cards at the bottom, the bar's tip, the sync row; 0.5: the mark 16, selects as tall as buttons; 0.4: tips on round buttons; 0.3: course colours in three tones (--t light, --m middle, --d deep); 0.2: the approved style (handoff/brand_rules.md).
    Type: IBM Plex Sans Arabic 400/700, six sizes only: 48 · 28 · 18 · 16 · 14 · 12. */
 :root{--ground:#f6f6f8;--card:#fff;--fg:#1d1e24;--fg2:#4b4e5e;--mute:#7d8194;--faint:#c6c8d1;--line:#e4e6ec;
   --lav:#eceefc;--lav2:#9aa6f2;--rose:#fbeef3;--rose2:#f0a9c2;--sky:#e8f2f6;--sky2:#a8c7d4;--sage:#edf5ef;--sage2:#b9d6c2;--slate:#b9c6d4;
@@ -10,6 +10,9 @@ body{padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-i
 button,input,select{font:inherit;color:inherit}
 svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;stroke-linejoin:round;flex:none}
 .wrap{max-width:1100px;margin:0 auto;padding:16px 16px 112px}
+/* home: the title at the top, the cards at the bottom with the same 16 margin as the sides; more cards grow upward */
+.wrap.home{min-height:100vh;min-height:100dvh;display:flex;flex-direction:column;padding-bottom:calc(16px + env(safe-area-inset-bottom))}
+.wrap.home>.grid{margin-top:auto;padding-top:24px}
 /* brand: the original, unchanged */
 .brand{direction:ltr;font-size:16px;font-weight:700;white-space:nowrap}
 .brand sup{font-size:16px;font-weight:400;vertical-align:baseline;margin-inline-start:2px}
@@ -17,7 +20,8 @@ svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.75;strok
 /* top bar and titles */
 .bar{display:flex;align-items:center;gap:8px;min-height:56px}
 .bar .mid{flex:1;display:flex;justify-content:center;min-width:0}
-h1{font-size:48px;line-height:1.15;font-weight:400;margin:16px 0}
+h1{font-size:48px;line-height:1.15;font-weight:400;margin:16px 0 8px}
+.syncrow{display:flex;justify-content:flex-end;margin:0 0 16px}
 h1 span{display:block;color:var(--mute)}
 h2{font-size:28px;line-height:1.25;font-weight:700;margin:0 0 12px}
 h3{font-size:18px;line-height:1.4;font-weight:700;margin:0}
@@ -64,8 +68,11 @@ h3{font-size:18px;line-height:1.4;font-weight:700;margin:0}
 .prog i.s{background:var(--m)}
 .prog i.g{background:var(--d)}
 .prog.sm{height:10px;border-radius:5px}.prog.sm i{border-radius:5px}
-.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:12px;color:var(--fg2)}
-.legend span::before{content:"";display:inline-block;width:10px;height:10px;border-radius:3px;margin-inline-end:6px;vertical-align:-1px;background:var(--c)}
+.prog{cursor:pointer;overflow:visible}
+.prog::before{content:"";position:absolute;inset:0;border-radius:inherit;background:var(--hatch);z-index:0}
+.prog i{z-index:1}
+.prog.tipon::after,.prog:focus-visible::after{content:attr(data-tip);position:absolute;bottom:calc(100% + 8px);inset-inline-start:0;z-index:40;white-space:nowrap;background:var(--fg);color:#fff;font-size:12px;line-height:1.6;padding:4px 10px;border-radius:999px;pointer-events:none}
+@media (hover:hover){.prog:hover::after{content:attr(data-tip);position:absolute;bottom:calc(100% + 8px);inset-inline-start:0;z-index:40;white-space:nowrap;background:var(--fg);color:#fff;font-size:12px;line-height:1.6;padding:4px 10px;border-radius:999px;pointer-events:none}}
 /* tables */
 .tw{background:var(--card);border-radius:28px;overflow:auto;-webkit-overflow-scrolling:touch}
 table{border-collapse:collapse;width:100%;font-size:14px}
