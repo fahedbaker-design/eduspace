@@ -1,4 +1,4 @@
-/* EduSpace offline — styles 0.5.3: the version under the mark, the layer bubble; 0.5.2: home cards at the bottom, the bar's tip, the sync row; 0.5: the mark 16, selects as tall as buttons; 0.4: tips on round buttons; 0.3: course colours in three tones (--t light, --m middle, --d deep); 0.2: the approved style (handoff/brand_rules.md).
+/* EduSpace offline — styles 0.12: the grading station (viewer, tools, voice note), the two numbers, the distribution; 0.5.3: the version under the mark, the layer bubble; 0.5.2: home cards at the bottom, the bar's tip, the sync row; 0.5: the mark 16, selects as tall as buttons; 0.4: tips on round buttons; 0.3: course colours in three tones (--t light, --m middle, --d deep); 0.2: the approved style (handoff/brand_rules.md).
    Type: IBM Plex Sans Arabic 400/700, six sizes only: 48 · 28 · 18 · 16 · 14 · 12. */
 :root{--ground:#f6f6f8;--card:#fff;--fg:#1d1e24;--fg2:#4b4e5e;--mute:#7d8194;--faint:#c6c8d1;--line:#e4e6ec;
   --lav:#eceefc;--lav2:#9aa6f2;--rose:#fbeef3;--rose2:#f0a9c2;--sky:#e8f2f6;--sky2:#a8c7d4;--sage:#edf5ef;--sage2:#b9d6c2;--slate:#b9c6d4;
@@ -123,3 +123,47 @@ select.inp,.field select{-webkit-appearance:none;appearance:none;padding-inline-
 .ch{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line);font-size:14px}
 .ch:last-child{border-bottom:0}
 .banner{background:#fff7ed;color:#9a3412;border-radius:18px;padding:12px 16px;font-size:14px;margin:0 0 16px}
+/* 0.12 — tags, the two numbers, the distribution */
+.tag.warn{background:#fff7ed;color:var(--warn)}
+.tag.bad{background:#fdecea;color:var(--bad)}
+.gb td.stale{color:var(--mute);box-shadow:inset 0 -3px 0 #f59e0b}
+.trow{display:flex;align-items:center;gap:12px;padding:8px 0;border-bottom:1px solid var(--line);font-size:14px}
+.trow.hd{font-size:12px;color:var(--mute);font-weight:700}
+.trow .sp{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.trow b,.trow>span:not(.sp){min-width:64px;text-align:left}
+.trow.d1 .sp{padding-inline-start:20px}.trow.d2 .sp{padding-inline-start:40px;color:var(--fg2)}
+.trow.d0{font-weight:700}
+/* the station's list */
+table.stn tr.link{cursor:pointer}
+table.stn tr.link:active td{background:#f1f2fd}
+table.stn td{white-space:normal;vertical-align:middle}
+table.stn td .tag{margin-inline-start:4px}
+td.num{text-align:center;font-weight:700;direction:ltr}
+/* the viewer: the whole screen */
+body.noscroll{overflow:hidden}
+.vw{position:fixed;inset:0;z-index:45;background:#e9eaef;display:flex;flex-direction:column;padding:env(safe-area-inset-top) env(safe-area-inset-right) 0 env(safe-area-inset-left)}
+.vbar,.vtools{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--card);box-shadow:0 1px 0 var(--line);flex-wrap:wrap}
+.vbar .who{flex:1;min-width:0;display:flex;flex-direction:column;line-height:1.4}
+.vbar .who b{font-size:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ico.flip svg{transform:scaleX(-1)}
+.ico:disabled{opacity:.35}
+.vg{display:flex;align-items:center;gap:8px}
+.vg .cell{width:72px;height:44px;border:1px solid var(--line);border-radius:12px;background:var(--ground);text-align:center;font-size:18px;direction:ltr}
+.vg .cell:focus{outline:none;border-color:var(--fg);background:#fff}
+.vtools .tl{appearance:none;border:0;width:44px;height:44px;border-radius:12px;background:transparent;display:inline-flex;align-items:center;justify-content:center;cursor:pointer;color:var(--fg)}
+.vtools .tl.on{background:var(--fg);color:#fff}
+.vtools .tl.dotb i{width:20px;height:20px;border-radius:50%;display:block;box-shadow:0 0 0 2px #fff,0 0 0 3px var(--line)}
+.vtools .tl.dotb.on{background:var(--ground)}
+.vtools .tl.dotb.on i{box-shadow:0 0 0 2px #fff,0 0 0 4px var(--fg)}
+.vau{display:flex;align-items:center;gap:8px}
+.vaudio{height:40px;max-width:280px}
+.recdot{width:12px;height:12px;border-radius:50%;background:var(--bad);animation:blink 1s infinite}
+@keyframes blink{50%{opacity:.25}}
+.vpages{flex:1;overflow:auto;-webkit-overflow-scrolling:touch;padding:16px 16px calc(32px + env(safe-area-inset-bottom));display:flex;flex-direction:column;align-items:center;gap:16px}
+.vpage{position:relative;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.12);flex:none}
+.vpage canvas{position:absolute;inset:0;width:100%;height:100%}
+.vpage canvas.ink{touch-action:pan-x pan-y;cursor:crosshair}
+.vfile{align-self:stretch;max-width:980px;margin:0 auto;width:100%}
+.vload{padding:32px;color:var(--mute)}
+.vload.err{color:var(--bad)}
+.vother{background:var(--card);border-radius:28px;padding:24px;text-align:center}
