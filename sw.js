@@ -1,12 +1,12 @@
-/* EduSpace offline — keeps the app's files on the device (0.12: the grading station and pdf.js; pdf.js's fonts are kept when first used). Opens from the cache (works without internet);
+/* EduSpace offline — keeps the app's files on the device (0.18: course.js; a new version takes its files fresh from the server (cache:'reload'), so it shows at once. 0.12: the grading station and pdf.js; pdf.js's fonts are kept when first used). Opens from the cache (works without internet);
    when online, each file is refreshed in the background, so a new version shows on the next opening.
    The font (IBM Plex Sans Arabic, from Google Fonts) is kept the same way after the first online opening. */
-const CACHE = 'eduspace-0.17.0';
+const CACHE = 'eduspace-0.18.0';
 const FONTS = 'eduspace-fonts';
-const FILES = ['./', './index.html', './app.css', './app.js', './station.js', './vendor/pdfjs/pdf.mjs', './vendor/pdfjs/pdf.worker.mjs', './manifest.webmanifest', './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png', './test.html'];
+const FILES = ['./', './index.html', './app.css', './app.js', './station.js', './course.js', './vendor/pdfjs/pdf.mjs', './vendor/pdfjs/pdf.worker.mjs', './manifest.webmanifest', './icon.svg', './icon-180.png', './icon-192.png', './icon-512.png', './test.html'];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES)).then(() => self.skipWaiting()));
+  e.waitUntil(caches.open(CACHE).then(c => c.addAll(FILES.map(f => new Request(f, { cache: 'reload' })))).then(() => self.skipWaiting()));   /* 0.18: fresh copies, never the browser's old ones */
 });
 self.addEventListener('activate', e => {
   e.waitUntil(caches.keys().then(ks => Promise.all(ks.filter(k => k !== CACHE && k !== FONTS).map(k => caches.delete(k)))).then(() => self.clients.claim()));

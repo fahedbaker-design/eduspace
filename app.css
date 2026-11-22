@@ -1,4 +1,4 @@
-/* EduSpace offline — styles 0.12: the grading station (viewer, tools, voice note), the two numbers, the distribution; 0.5.3: the version under the mark, the layer bubble; 0.5.2: home cards at the bottom, the bar's tip, the sync row; 0.5: the mark 16, selects as tall as buttons; 0.4: tips on round buttons; 0.3: course colours in three tones (--t light, --m middle, --d deep); 0.2: the approved style (handoff/brand_rules.md).
+/* EduSpace offline — styles 0.18: the whole course (course.js) — list cards, forms, the distribution, the participation; the approved card shadow (ui_notes 23); the grading page's bar at the top (ui_notes 4). 0.12: the grading station (viewer, tools, voice note), the two numbers, the distribution; 0.5.3: the version under the mark, the layer bubble; 0.5.2: home cards at the bottom, the bar's tip, the sync row; 0.5: the mark 16, selects as tall as buttons; 0.4: tips on round buttons; 0.3: course colours in three tones (--t light, --m middle, --d deep); 0.2: the approved style (handoff/brand_rules.md).
    Type: IBM Plex Sans Arabic 400/700, six sizes only: 48 · 28 · 18 · 16 · 14 · 12. */
 :root{--ground:#f6f6f8;--card:#fff;--fg:#1d1e24;--fg2:#4b4e5e;--mute:#7d8194;--faint:#c6c8d1;--line:#e4e6ec;
   --lav:#eceefc;--lav2:#9aa6f2;--rose:#fbeef3;--rose2:#f0a9c2;--sky:#e8f2f6;--sky2:#a8c7d4;--sage:#edf5ef;--sage2:#b9d6c2;--slate:#b9c6d4;
@@ -238,3 +238,58 @@ body.noscroll{overflow:hidden}
 table.kv{width:100%;border-collapse:collapse;margin:0 0 12px}
 table.kv td{padding:6px 0;border-bottom:1px solid #e6e7ee;font-size:16px}
 table.kv td.n14{color:#6b6f80;width:40%}
+
+/* ===================== 0.18 ===================== */
+/* the approved card shadow (ui_notes 23): solid colour, a light shadow; lifts on hover, sinks a little on press */
+:root{--sh0:0 1px 2px rgba(24,26,40,.05),0 6px 16px -8px rgba(24,26,40,.16);--sh1:0 1px 3px rgba(24,26,40,.06),0 12px 24px -10px rgba(24,26,40,.22);--sh2:0 1px 2px rgba(24,26,40,.08),0 2px 6px -4px rgba(24,26,40,.12)}
+.card,.cc,.tw{box-shadow:var(--sh0)}
+.cc,.card.go{transition:box-shadow .2s,transform .2s,filter .2s;cursor:pointer}
+@media (hover:hover){.cc:hover,.card.go:hover{box-shadow:var(--sh1);transform:translateY(-2px)}}
+.cc:active,.card.go:active{box-shadow:var(--sh2);transform:translateY(1px);filter:brightness(.97);transition-duration:.08s}
+@media (prefers-reduced-motion:reduce){.cc,.card.go{transition:none}.cc:hover,.cc:active,.card.go:hover,.card.go:active{transform:none}}
+/* the course's ten buttons in the top row scroll sideways */
+.pills.inbar{scrollbar-width:none}.pills.inbar::-webkit-scrollbar{display:none}
+/* lists of lectures, activities, quick submissions */
+.chead{display:flex;align-items:center;justify-content:space-between;gap:12px;margin:8px 0 16px}
+.chead h2{margin:0}
+.list{display:flex;flex-direction:column;gap:12px}
+.wkh{font-size:14px;font-weight:700;color:var(--fg2);margin:8px 0 0}
+.card.item{display:flex;flex-direction:column;gap:8px}
+.ih{display:flex;align-items:center;gap:12px}
+.it{flex:1;min-width:0;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.it h3{margin:0}
+.ia{display:flex;align-items:center;gap:4px;flex-wrap:wrap;justify-content:flex-end}
+.ico.red{color:var(--bad)}
+.tag.warn{background:#fff7ed;color:var(--warn)}
+.mats{display:flex;flex-direction:column;gap:4px;border-top:1px solid var(--line);padding-top:8px}
+.mat{display:flex;align-items:center;gap:8px;font-size:14px;min-height:40px}
+.mat a{color:var(--fg);text-decoration:none;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.card.stat{display:flex;flex-direction:column;gap:4px}
+/* forms */
+.cols3{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px}
+.inp.ta{border-radius:18px;height:auto;min-height:96px;padding:12px 16px;resize:vertical;font:inherit;font-size:16px;width:100%}
+.inp{width:100%}
+.inp:disabled{opacity:.55}
+.inp.mini{height:40px;min-height:40px;width:auto;font-size:14px;font-weight:700}
+.sh{max-width:680px}
+/* the distribution */
+.drow{display:flex;align-items:center;gap:6px;padding:6px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.drow .inp{height:40px;min-height:40px;font-size:14px}
+.drow>.inp:first-child{flex:1 1 180px}
+.drow .inp.w{width:80px;text-align:center}
+.drow .inp.u{width:auto}
+.drow .inp.lk{flex:1 1 180px}
+.drow.d1{padding-inline-start:24px}.drow.d2{padding-inline-start:48px}
+/* participation */
+.gb.part th{text-align:center}
+.wkb{appearance:none;border:0;border-radius:999px;min-width:40px;height:28px;font:inherit;font-size:12px;font-weight:700;background:var(--fg);color:#fff;cursor:pointer}
+.wkb.lk{background:var(--ground);color:var(--mute)}
+/* quick submissions: the rating 1–5 */
+.stars{display:flex;gap:4px}
+.star{appearance:none;border:0;width:32px;height:32px;border-radius:50%;background:var(--ground);font:inherit;font-size:12px;font-weight:700;color:var(--mute);cursor:pointer}
+.star.on{background:var(--fg);color:#fff}
+/* the grading page: its bar at the top (ui_notes 4), its pieces centred in it with the same space */
+.vbar2{top:0;bottom:auto;height:calc(64px + env(safe-area-inset-top));padding:env(safe-area-inset-top) 12px 0;box-shadow:0 1px 0 var(--line);gap:12px}
+.vpages2{inset:calc(64px + env(safe-area-inset-top)) 0 0 0}
+.vpill{bottom:16px}
+.vpop{bottom:auto;top:calc(72px + env(safe-area-inset-top))}

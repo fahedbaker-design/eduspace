@@ -1,8 +1,8 @@
-/* EduSpace offline — 0.17.0: «حذف المساق» in the course bar (the teacher's iPad deletes as the panel does: to the Drive trash; an empty course at once, any other after a confirmation); after every sync everything of a course no longer in the list (deleted or archived) leaves the device (purgeGone). 0.11.0: one version number with the panel (MAJOR.MINOR.PATCH); a teaching assistant's device (only his courses, his permissions: «can», read-only items); a warning when the panel's major version differs. 0.5.4: names of naming_v1.md («سجل الدرجات»، «استيراد من مودل»، «كود الربط»). 0.5.3: the sync state on the right under the title; the version under the mark; each layer of the progress bar has its own bubble. 0.5.2: round buttons on the right, the mark alone on the left; the sync state under the title; home cards at the bottom; the progress bar tells its layers on a tap; a new version reloads itself. 0.5.1: the version next to the mark. 0.5: two-way sync — every change is a record in the outbox (grade, section, publish, removal) with the value it started from; «مزامنة الآن» sends them, then downloads; a cell changed in both places comes back as a conflict to decide. 0.4: linked to EduSpace (read only: «تنزيل بياناتي» brings the real courses; editing returns with two-way sync); tips on round buttons. 0.2: the approved style (handoff/brand_rules.md); 0.1: demo data, simulated sync.
+/* EduSpace offline — 0.18.0: the whole course on the iPad — ten buttons in the course's top row (course.js: lectures, activities, the distribution, the participation, quick submissions, settings, all prepared offline, files in an upload queue); the sync runs by itself (on opening, when the network comes back, every 10 minutes) and sends the files in chunks after the changes; a new version reloads the app by itself (not inside the grading page); what belongs to a deleted or archived course leaves on opening and in «التخزين» too; the course code shown «EARC 2204»; cards with the approved shadow. 0.17.0: «حذف المساق» in the course bar (the teacher's iPad deletes as the panel does: to the Drive trash; an empty course at once, any other after a confirmation); after every sync everything of a course no longer in the list (deleted or archived) leaves the device (purgeGone). 0.11.0: one version number with the panel (MAJOR.MINOR.PATCH); a teaching assistant's device (only his courses, his permissions: «can», read-only items); a warning when the panel's major version differs. 0.5.4: names of naming_v1.md («سجل الدرجات»، «استيراد من مودل»، «كود الربط»). 0.5.3: the sync state on the right under the title; the version under the mark; each layer of the progress bar has its own bubble. 0.5.2: round buttons on the right, the mark alone on the left; the sync state under the title; home cards at the bottom; the progress bar tells its layers on a tap; a new version reloads itself. 0.5.1: the version next to the mark. 0.5: two-way sync — every change is a record in the outbox (grade, section, publish, removal) with the value it started from; «مزامنة الآن» sends them, then downloads; a cell changed in both places comes back as a conflict to decide. 0.4: linked to EduSpace (read only: «تنزيل بياناتي» brings the real courses; editing returns with two-way sync); tips on round buttons. 0.2: the approved style (handoff/brand_rules.md); 0.1: demo data, simulated sync.
  * Everything is kept on the device (IndexedDB); every change is written to an outbox that the sync sends later.
  * Views: home (courses) · course: students | grades | submissions · sheets: sync, export, bulk, backup. */
 'use strict';
-var VERSION = '0.17.0';                 /* the system's version: the same number as the panel (handoff/backlog.md) */
+var VERSION = '0.18.0';                 /* the system's version: the same number as the panel (handoff/backlog.md) */
 var $ = function (s, r) { return (r || document).querySelector(s); };
 var ICON = {
   sync: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
@@ -53,8 +53,8 @@ var DB = null, S = null;
 function idb() {
   if (DB) return Promise.resolve(DB);
   return new Promise(function (ok, no) {
-    var r = indexedDB.open('eduspace', 2);                 /* 2: the grading station's files and ink (station.js) */
-    r.onupgradeneeded = function () { ['kv', 'files', 'marks'].forEach(function (n) { if (!r.result.objectStoreNames.contains(n)) r.result.createObjectStore(n); }); };
+    var r = indexedDB.open('eduspace', 3);                 /* 2: the grading station's files and ink (station.js); 3: the upload queue «up» (course.js) */
+    r.onupgradeneeded = function () { ['kv', 'files', 'marks', 'up'].forEach(function (n) { if (!r.result.objectStoreNames.contains(n)) r.result.createObjectStore(n); }); };
     r.onsuccess = function () { DB = r.result; ok(DB); }; r.onerror = function () { no(r.error); };
   });
 }
@@ -150,7 +150,8 @@ function syncChip() {
   var c = $('#sync'); if (!c) return;
   var n = S.outbox.length, on = navigator.onLine;
   c.className = 'sync' + (!on ? ' off' : n ? ' pend' : '');
-  c.innerHTML = '<span class="dot"></span>' + (n ? pl(n, 'تغيير', 'تغييرات') + ' بانتظار الإرسال' : 'كل شيء متزامن') + (on ? '' : ' · بلا إنترنت');
+  var busy = typeof AUTO !== 'undefined' && AUTO.busy;
+  c.innerHTML = '<span class="dot"></span>' + (busy ? 'جارٍ المزامنة…' : n ? pl(n, 'تغيير', 'تغييرات') + ' بانتظار الإرسال' : 'كل شيء متزامن') + (on ? '' : ' · بلا إنترنت');
 }
 function sheet(title, build, foot) {
   var ov = el('div', 'ov'), sh = el('div', 'sh');
@@ -218,7 +219,7 @@ function pull() {
       var st = {}; c.students.forEach(function (s) { st[s.id] = s; });
       var old = (S.data || {})[c.key] || {};
       data[c.key] = { students: st, secs: c.secs || {}, grades: c.grades || {}, pens: c.pens || {}, can: c.can || null,
-        tree: c.tree || null, values: c.values || {}, nums: c.nums || {}, st: old.st || {}, h: c.h || '',
+        tree: c.tree || null, values: c.values || {}, nums: c.nums || {}, st: old.st || {}, h: c.h || '', content: c.content || old.content || null,
         items: c.items.map(function (it) { it.sub = (c.subs || {})[it.id] || {}; return it; }) };
       /* which subjects have feedback on the server (1 the file, 2 the voice note) */
       Object.keys(c.fbs || {}).forEach(function (code) {
@@ -229,7 +230,8 @@ function pull() {
     var keep = S.demo ? [] : (S.outbox || []);
     if (x.ver && String(x.ver).replace(/^v/, '').split('.')[0] !== VERSION.split('.')[0]) say('إصدار اللوحة ' + x.ver + ' وإصدار التطبيق ' + VERSION + ': حدّث التطبيق أو اللوحة');
     S = { v: 2, demo: false, readonly: false, link: S.link, owner: x.owner || '', serverVer: x.ver || '', lastSync: x.at, lastMs: x.ms || 0, courses: courses, data: data, outbox: keep, seq: S.seq || 0 };
-    applyOutbox(data);
+    applyOutbox(data); applyContentOutbox(data);
+    if (typeof DT !== 'undefined') DT = null;
     persist(); return x;
   });
 }
@@ -240,29 +242,32 @@ function syncNow() {
   if (!S.link || S.demo) return Promise.reject(new Error('اربط الجهاز أولًا'));
   if (!navigator.onLine) return Promise.reject(new Error('لا إنترنت الآن. التغييرات محفوظة وستُرسل عند الاتصال.'));
   var send = S.outbox.filter(function (o) { return !o.cf; }), sum = { sent: 0, conflicts: 0, errors: 0 }, t0 = Date.now();
-  var p = send.length ? api(S.link, 'push', { changes: send.map(function (o) { return { n: o.n, k: o.k, c: o.course, i: o.i, s: o.s, v: o.v, w: o.w, f: !!o.f }; }) })
+  var p = send.length ? api(S.link, 'push', { changes: send.map(function (o) { return String(o.id).indexOf('C|') === 0 ? wireC(o) : { n: o.n, k: o.k, c: o.course, i: o.i, s: o.s, v: o.v, w: o.w, f: !!o.f }; }) })
     : Promise.resolve({ results: [] });
   return p.then(function (res) {
+    var ac = afterPushC(res.results); sum.notes = ac.notes;        /* 0.18: real ids, and what the latest-edit rule decided */
     res.results.forEach(function (r) {
       var at = -1; S.outbox.forEach(function (o, x) { if (o.n === r.n) at = x; });
       if (at < 0) return;
       var o = S.outbox[at];
-      if (r.st === 'ok') { S.outbox.splice(at, 1); sum.sent++; }
+      if (r.st === 'ok' || r.st === 'stale') { S.outbox.splice(at, 1); if (r.st === 'ok') sum.sent++; }
       else if (r.st === 'conflict') { o.cf = true; o.cur = r.cur == null ? null : r.cur; sum.conflicts++; }
       else { o.err = r.err || 'خطأ'; sum.errors++; }
     });
     persist();
     return sendReady().then(function (n) { sum.fb = n; }, function () { /* tried again at the next sync */ });
-  }).then(function () { return pull(); }).then(function () { return purgeGone(); }).then(function () { stAfterSync(); sum.ms = Date.now() - t0; sum.server = S.lastMs || 0; return sum; });
+  }).then(function () { return upRun().then(function (n) { sum.ups = n; }); }).then(function () { return pull(); }).then(function () { return purgeGone(); }).then(function () { stAfterSync(); sum.ms = Date.now() - t0; sum.server = S.lastMs || 0; return sum; });
 }
 /* ===================== deleting a course (0.17) ===================== */
 /* every file and correction kept on the iPad for a course that is no longer in the list (deleted or archived in the
    panel, or from this iPad) goes, after every sync: nothing of it comes back */
 function purgeGone() {
   var live = {}; S.courses.forEach(function (c) { live[c.key] = 1; });
-  return Promise.all([fAll('files'), fAll('marks')]).then(function (r) {
+  if (!S || S.demo || !S.link) return Promise.resolve();
+  return Promise.all([fAll('files'), fAll('marks'), fAll('up')]).then(function (r) {
     var gone = r[0].filter(function (x) { return !live[x.v.course]; }).map(function (x) { return fDel('files', x.k); })
-      .concat(r[1].filter(function (x) { return !live[String(x.k).split('|')[0]]; }).map(function (x) { return fDel('marks', x.k); }));
+      .concat(r[1].filter(function (x) { return !live[String(x.k).split('|').slice(0, 2).join('|')] && !live[String(x.k).split('|')[0]]; }).map(function (x) { return fDel('marks', x.k); }))
+      .concat(r[2].filter(function (x) { return !live[x.v.course]; }).map(function (x) { return fDel('up', x.k); }));
     return Promise.all(gone);
   }).catch(function () { /* tried again after the next sync */ });
 }
@@ -341,6 +346,7 @@ function openSync() {
           var d = S.data[o.course];
           if (d && o.k === 'g') { var g = d.grades[o.i] = d.grades[o.i] || {}; if (o.cur == null) delete g[o.s]; else g[o.s] = o.cur; }
           if (d && o.k === 'sec') { if (o.cur) d.secs[o.s] = o.cur; else delete d.secs[o.s]; }
+          if (d && o.k === 'part' && d.content && d.content.part) { var pm = d.content.part.marks[o.s] = d.content.part.marks[o.s] || {}; if (o.cur == null) delete pm[o.wk]; else pm[o.wk] = o.cur; }
           persist(); document.querySelector('.ov').remove(); openSync(); draw();
         });
         r.appendChild(mine); r.appendChild(theirs); b.appendChild(r);
@@ -359,7 +365,7 @@ function openSync() {
         h.close(); draw();
         say((x.sent ? 'أُرسل ' + pl(x.sent, 'تغيير', 'تغييرات') + ' وحُدّثت البيانات' : 'حُدّثت البيانات من EduSpace') +
           (x.conflicts ? ' · ' + pl(x.conflicts, 'تعارض', 'تعارضات') + ': افتح المزامنة لتقرر' : '') + (x.errors ? ' · لم يُرسل ' + x.errors : '') + (x.fb ? ' · يُرسل في الخلفية ' + pl(x.fb, 'تصحيح', 'تصحيحات') : '') + ' · ' + secs(x.ms) + (x.server ? ' (اللوحة ' + secs(x.server) + ')' : '') + '.');
-        if (x.conflicts) openSync();
+        if (x.conflicts) openSync(); else if (x.notes && x.notes.length) notesSheet(x.notes);
       }).catch(function (e) { h.close(); fail('تعذّرت المزامنة', e); });
       return;
     }
@@ -473,7 +479,7 @@ function drawHome(app) {
     var pend = S.outbox.filter(function (o) { return o.course === c.key; }).length;
     var k = tint(el('div', 'cc'), c.color); k.tabIndex = 0; k.setAttribute('role', 'button');
     var hd = el('div', 'hd'), av = ico('users', c.name, null); av.tabIndex = -1; hd.appendChild(av);
-    var t = el('div', 't'); t.appendChild(el('span', 'code', c.code)); t.appendChild(el('span', 'n14', c.name)); hd.appendChild(t);
+    var t = el('div', 't'); t.appendChild(el('span', 'code', codeShow(c.code))); t.appendChild(el('span', 'n14', c.name)); hd.appendChild(t);
     if (pend) hd.appendChild(el('span', 'badge', pl(pend, 'تغيير', 'تغييرات')));
     k.appendChild(hd);
     if (it) {
@@ -495,18 +501,27 @@ function drawCourse(app) {
   tint(document.body, c.color);
   var bar = topBar(function () { go('home'); });
   app.appendChild(bar);
-  title(app, c.code, c.name);
-  /* 0.16: the course tabs sit in the top row, next to ⋯ and the back arrow */
+  title(app, codeShow(c.code), c.name);
+  /* 0.18 (ui_notes 3, backlog أ): every button of the course in the top row — one word each, the full name in the tip */
   var tabs = el('div', 'pills inbar');
-  [['students', 'الطلاب', 'users'], ['subs', 'التسليمات', 'inbox'], ['grades', 'سجل الدرجات', 'grades']].forEach(function (t) {
+  CTABS.forEach(function (t) {
     var b = el('button', 'pill' + (R.tab === t[0] ? ' on' : '')); b.type = 'button'; b.innerHTML = svg(t[2]); b.appendChild(document.createTextNode(t[1]));
+    if (CTAB_TIP[t[0]]) b.title = CTAB_TIP[t[0]];
     b.onclick = function () { go('course', R.key, t[0]); }; tabs.appendChild(b);
   });
   bar.insertBefore(tabs, bar.querySelector('.sp'));
+  setTimeout(function () { var on = tabs.querySelector('.on'); if (on && on.scrollIntoView) on.scrollIntoView({ block: 'nearest', inline: 'center' }); }, 0);
   /* 0.17: the teacher's iPad deletes a course as the panel does: to the Drive trash, on both sides */
   if (!S.demo && S.link && !S.owner) { var dl = ico('del', 'حذف المساق', function () { delCourse(c); }); dl.classList.add('red'); bar.insertBefore(dl, bar.querySelector('.sp')); }
   if (R.tab === 'grades') drawGrades(app, d);
   else if (R.tab === 'subs') drawStation(app, d);
+  else if (R.tab === 'info') drawInfo(app, d);
+  else if (R.tab === 'lec') drawLec(app, d);
+  else if (R.tab === 'asg') drawAsg(app, d);
+  else if (R.tab === 'dist') drawDist(app, d);
+  else if (R.tab === 'part') drawPart(app, d);
+  else if (R.tab === 'qk') drawQuick(app, d);
+  else if (R.tab === 'set') drawSet(app, d);
   else drawStudents(app, d);
 }
 function secsOf(d) { var o = {}; Object.keys(d.secs).forEach(function (id) { if (d.students[id]) o[d.secs[id]] = 1; }); return Object.keys(o).sort(secCmp); }
@@ -820,13 +835,25 @@ addEventListener('online', syncChip); addEventListener('offline', syncChip);
 addEventListener('hashchange', function () { fromHash(); draw(); });
 if ('serviceWorker' in navigator) {
   var hadSW = !!navigator.serviceWorker.controller;
-  navigator.serviceWorker.register('sw.js').then(function (r) { try { r.update(); } catch (e) { /* offline */ } }).catch(function () {});
-  /* a new version took over: reload once, so it shows now and not at the next opening */
-  navigator.serviceWorker.addEventListener('controllerchange', function () { if (hadSW && !window.__reloaded) { window.__reloaded = true; location.reload(); } });
-  document.addEventListener('visibilitychange', function () { if (!document.hidden) navigator.serviceWorker.getRegistration().then(function (r) { if (r) r.update(); }).catch(function () {}); });
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(function (r) { try { r.update(); } catch (e) { /* offline */ } }).catch(function () {});
+  /* 0.18 (backlog هـ): a new version took over → reload by itself, at once; inside the grading page (or while
+     recording) it waits until the teacher leaves it. Everything is kept on the device, nothing is lost. */
+  var reloadNew = function () {
+    if (window.__reloaded) return;
+    if (typeof VW !== 'undefined' && VW) { setTimeout(reloadNew, 3000); return; }
+    window.__reloaded = true; location.reload();
+  };
+  navigator.serviceWorker.addEventListener('controllerchange', function () { if (hadSW) reloadNew(); });
+  var checkNew = function () { navigator.serviceWorker.getRegistration().then(function (r) { if (r) r.update(); }).catch(function () {}); };
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) checkNew(); });
+  setInterval(checkNew, 600000);
 }
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
-kvGet('state').then(function (s) { S = (s && s.v >= 2) ? s : demo(); if (S !== s) persist(); fromHash(); draw(); })
+kvGet('state').then(function (s) {
+  S = (s && s.v >= 2) ? s : demo(); if (S !== s) persist(); fromHash(); draw();
+  purgeGone(); upList();                              /* 0.18: what a deleted course left goes at once; the queue is read */
+  setTimeout(function () { autoSync('open'); }, 1500);
+})
   .catch(function (e) { $('#app').textContent = 'تعذّر فتح التخزين على الجهاز: ' + e.message; });
 /* 0.15.1: copying gives only what is seen. The invisible direction marks kept around numbers (so a number keeps its
    place in Arabic text) never leave the page; one cell gives its value alone; several cells of a table give their

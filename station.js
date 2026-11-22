@@ -1,4 +1,4 @@
-/* EduSpace offline — the grading station (0.17.0: «التخزين» no longer deletes a live course's files on the iPad alone — they leave when the course is deleted or archived; «تنظيف» stays. 0.16.0: the grading page of proto_station_v1 — the work fills the screen, a
+/* EduSpace offline — the grading station (0.18.0: «التخزين» first removes what a deleted or archived course left (purgeGone); its bar at the top (app.css). 0.17.0: «التخزين» no longer deletes a live course's files on the iPad alone — they leave when the course is deleted or archived; «تنظيف» stays. 0.16.0: the grading page of proto_station_v1 — the work fills the screen, a
    floating capsule of tools, one bar at the bottom, students and assignments ‹ ›, pinch to zoom, fit screen / width. 0.14.0: a background queue — files come down a few at a time and the
    student opened jumps the queue; «إرسال» sends in the background; lighter annotated pages. 0.13.0: a submitted text is shown as text — selectable, copyable — and the
    teacher highlights parts of it with a note on each (hl); links open; a written note for the whole submission;
@@ -776,6 +776,7 @@ function sendReady() {     /* at every sync: whatever is marked «ready» joins 
 
 /* ===================== storage on the iPad ===================== */
 function openStorage() {
+  purgeGone();                                          /* 0.18: what a deleted or archived course left goes first */
   sheet('التخزين على الجهاز', function (b, h) {
     var p = el('p', 'n14', 'يُحسب…'); b.appendChild(p);
     var list = el('div'); b.appendChild(list);
@@ -787,7 +788,7 @@ function openStorage() {
         p.textContent = est ? 'المستعمل ' + size(est.usage || 0) + (est.quota ? ' من ' + size(est.quota) + ' متاحة للتطبيق' : '') : '';
         list.textContent = '';
         if (!Object.keys(by).length) list.appendChild(el('p', 'n14', 'لا ملفات تسليمات على الجهاز.'));
-        else list.appendChild(el('p', 'n12', 'هذه نسخ من تسليمات الطلاب تبقى على الجهاز للتصحيح بلا إنترنت. تُمحى وحدها حين يُحذف المساق أو يُؤرشف. «تنظيف» يمحو التصحيحات التي أُرسلت (تبقى عند الطلاب).'));
+        else list.appendChild(el('p', 'n12', 'هذه نسخ من تسليمات الطلاب تبقى على الجهاز للتصحيح بلا إنترنت. تُمحى وحدها حين يُحذف المساق أو يُؤرشف. «تنظيف» يمحو من هذا الآيباد نسخ التصحيحات التي أُرسلت فقط؛ تبقى عند الطلاب على الخادم، ولا يمحو ما لم يُرسل.'));
         Object.keys(by).sort().forEach(function (k) {
           var q = k.split('|'), c = courseOf(q[0]), x = by[k], row = el('div', 'ch');
           var t = el('div', 'sp'); t.appendChild(el('b', '', c.code + ' · ' + q[1]));
@@ -797,6 +798,7 @@ function openStorage() {
             if (!confirm('تُحذف من الجهاز التصحيحات التي أُرسلت لهذا التكليف (تبقى عند الطلاب). متابعة؟')) return;
             Promise.all(marks.filter(function (m) { return m.k.indexOf(k + '|') === 0 && m.v.state === 'sent'; }).map(function (m) { return fDel('marks', m.k); })).then(load);
           }, 'del'));
+          if (x.m) row.lastChild.title = 'يمحو من هذا الآيباد نسخ التصحيحات التي أُرسلت فقط (تبقى عند الطلاب)';
           list.appendChild(row);
         });
       }).catch(function (e) { p.textContent = 'تعذّر الحساب: ' + e.message; });
