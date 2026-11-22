@@ -204,7 +204,7 @@ function drawStation(app, d) {
       if (m && m.audio || sent && sent.audio) s.appendChild(el('span', 'tag', 'صوت'));
       if (m && m.hl && m.hl.length || sent && sent.hl) s.appendChild(el('span', 'tag', 'تظليل'));
       tr.appendChild(s);
-      var g = (d.grades[it.id] || {})[row.sids[0]]; tr.appendChild(el('td', 'num', g == null ? '—' : fmt(g)));
+      var g = (d.grades[it.id] || {})[row.sids[0]], gtd = el('td', 'num'); gtd.appendChild(scoreEl(g, it.max)); tr.appendChild(gtd);
       tr.onclick = function () { openViewer(R.key, it.id, all, i); };
       t.appendChild(tr);
     });
@@ -309,8 +309,9 @@ function openViewer(key, code, list, idx) {
   var who = el('div', 'who'); who.appendChild(el('b', '', subjName(d, row))); who.appendChild(el('span', 'n12', it.code + ' · ' + it.title + ' · ' + when(row.atMs) + (row.late ? ' · متأخر' : ''))); top.appendChild(who);
   var prev = ico('back', 'السابق', function () { openViewer(key, code, list, idx - 1); }); prev.disabled = idx <= 0; top.appendChild(prev);
   var nxt = ico('back', 'التالي', function () { openViewer(key, code, list, idx + 1); }); nxt.classList.add('flip'); nxt.disabled = idx >= list.length - 1; top.appendChild(nxt);
-  var gw = el('label', 'vg'); gw.appendChild(el('span', 'n12', 'الدرجة من ' + it.max));
-  var gi = el('input', 'cell'); gi.inputMode = 'decimal'; gi.value = fmt((d.grades[code] || {})[row.sids[0]]); gw.appendChild(gi); top.appendChild(gw);
+  var gw = el('label', 'vg');      /* 0.15: «[ 8 ] \ 10» */
+  var gi = el('input', 'cell'); gi.inputMode = 'decimal'; gi.value = fmt((d.grades[code] || {})[row.sids[0]]); gi.setAttribute('aria-label', 'الدرجة من ' + it.max);
+  gw.appendChild(gi); gw.appendChild(el('span', 'gmax', '\\ ' + fmt(it.max))); top.appendChild(gw);
   if (it.ro || !may(d, 'grade')) { gi.readOnly = true; gi.title = 'للعرض فقط على هذا الجهاز'; }
   gi.onchange = function () {
     var v = num(gi.value), g = (d.grades[code] = d.grades[code] || {});

@@ -2,7 +2,7 @@
  * Everything is kept on the device (IndexedDB); every change is written to an outbox that the sync sends later.
  * Views: home (courses) · course: students | grades | submissions · sheets: sync, export, bulk, backup. */
 'use strict';
-var VERSION = '0.14.0';                 /* the system's version: the same number as the panel (handoff/backlog.md) */
+var VERSION = '0.15.0';                 /* the system's version: the same number as the panel (handoff/backlog.md) */
 var $ = function (s, r) { return (r || document).querySelector(s); };
 var ICON = {
   sync: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
@@ -19,6 +19,7 @@ var ICON = {
   list: '<path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/>',
   eye: '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>',
   link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+  eyeoff: '<path d="M10.7 5.1A10.7 10.7 0 0 1 22 12a13 13 0 0 1-1.7 2.7"/><path d="M14.1 14.2a3 3 0 0 1-4.2-4.2"/><path d="M17.5 17.5A10.8 10.8 0 0 1 2 12a13.2 13.2 0 0 1 4.5-5.5"/><path d="m2 2 20 20"/>',
   pen: '<path d="M12 20h9"/><path d="M16.38 3.62a1 1 0 0 1 3 3L7.37 18.64a2 2 0 0 1-.86.5l-2.87.84a.5.5 0 0 1-.62-.62l.84-2.87a2 2 0 0 1 .5-.86z"/>',
   hl: '<path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/>',
   eraser: '<path d="m7 21-4.3-4.3c-1-1-1-2.5 0-3.4l9.6-9.6c1-1 2.5-1 3.4 0l5.6 5.6c1 1 1 2.5 0 3.4L13 21"/><path d="M22 21H7"/><path d="m5 11 9 9"/>',
@@ -160,6 +161,13 @@ function sheet(title, build, foot) {
   (foot || []).forEach(function (b) { f.appendChild(btn(b[0], b[1], function () { b[2](h); }, b[3])); });
   f.appendChild(btn('إغلاق', 'sec', h.close));
   return h;
+}
+/* the one way a grade is shown (2026-11-22): the student's grade on the right in its level's colour, «\\», the maximum */
+function scoreEl(got, max) {
+  var s = el('span', 'score'), g = el('span', 'got', got == null || got === '' ? '—' : fmt(got));
+  if (got != null && got !== '' && max) { var p = got * 100 / max; g.style.color = p >= 90 ? '#16a34a' : p >= 80 ? '#65a30d' : p >= 70 ? '#d97706' : p >= 60 ? '#ef4444' : '#991b1b'; }
+  s.appendChild(g); s.appendChild(el('span', 'sep', '\\')); s.appendChild(el('span', 'max', fmt(max)));
+  return s;
 }
 /* ===================== the link to EduSpace (Sync.gs in the panel, through «EduSpace Sync») ===================== */
 function parseCode(code) {
@@ -577,8 +585,11 @@ function drawGrades(app, d) {
   var of = 0;
   d.items.forEach(function (it) {
     of += it.max;
-    var th = el('th'), box = el('div', 'it'); box.appendChild(el('b', '', it.code)); box.appendChild(el('span', '', 'من ' + it.max));
-    var tg = el('div', 'row'); tg.style.gap = '4px'; tg.appendChild(srcTag(it)); if (it.published) tg.appendChild(el('span', 'tag ok', 'منشور')); box.appendChild(tg);
+    /* 0.15: the code, a small crossed eye when not published, «\ max» under it; the source tag only for Moodle */
+    var th = el('th'), box = el('div', 'it'), cd = el('b', '', it.code);
+    if (!it.published) { var ey = el('span', 'off'); ey.innerHTML = svg('eyeoff'); ey.title = 'غير منشور للطلاب'; cd.appendChild(ey); }
+    box.appendChild(cd); box.appendChild(el('span', '', '\\ ' + fmt(it.max)));
+    if (it.source === 'moodle') box.appendChild(srcTag(it));
     var xs = itemStats(d, it); box.appendChild(prog(xs.total, xs.sub, xs.graded, true));
     box.title = it.title; box.onclick = function () { itemSheet(d, it); }; th.appendChild(box); hr.appendChild(th);
   });
