@@ -2,7 +2,7 @@
  * Everything is kept on the device (IndexedDB); every change is written to an outbox that the sync sends later.
  * Views: home (courses) · course: students | grades | submissions · sheets: sync, export, bulk, backup. */
 'use strict';
-var VERSION = '0.15.1';                 /* the system's version: the same number as the panel (handoff/backlog.md) */
+var VERSION = '0.16.0';                 /* the system's version: the same number as the panel (handoff/backlog.md) */
 var $ = function (s, r) { return (r || document).querySelector(s); };
 var ICON = {
   sync: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
@@ -296,8 +296,8 @@ function openSync() {
         var r = el('div', 'ch'); r.style.flexWrap = 'wrap';
         r.appendChild(el('span', 'tag', courseOf(o.course).code)); r.appendChild(el('span', 'sp', o.text));
         r.appendChild(el('span', 'n12', 'قيمتك ' + (o.v == null || o.v === '' ? '—' : o.v) + ' · في EduSpace ' + (o.cur == null || o.cur === '' ? '—' : o.cur)));
-        var mine = btn('اعتمد قيمتي', 'sec', function () { o.f = true; delete o.cf; persist(); document.querySelector('.ov').remove(); openSync(); });
-        var theirs = btn('خذ قيمة EduSpace', 'sec', function () {
+        var mine = btn('قيمتي', 'sec', function () { o.f = true; delete o.cf; persist(); document.querySelector('.ov').remove(); openSync(); });
+        var theirs = btn('EduSpace', 'sec', function () {
           S.outbox = S.outbox.filter(function (x) { return x !== o; });
           var d = S.data[o.course];
           if (d && o.k === 'g') { var g = d.grades[o.i] = d.grades[o.i] || {}; if (o.cur == null) delete g[o.s]; else g[o.s] = o.cur; }
@@ -342,7 +342,7 @@ function openMenu() {
     var lb = btn(S.link ? 'الربط بـ EduSpace · مربوط' : 'الربط بـ EduSpace', S.link ? 'sec' : '', function () { document.querySelector('.ov').remove(); openLink(); }, 'link');
     lb.style.marginInlineEnd = '8px'; b.appendChild(lb);
     b.appendChild(sb);
-    b.appendChild(btn('حفظ نسخة احتياطية', 'sec', function () {
+    b.appendChild(btn('نسخة', 'sec', function () {
       share(new Blob([JSON.stringify(S)], { type: 'application/json' }), 'EduSpace-backup-' + new Date().toISOString().slice(0, 10) + '.json');
     }, 'save'));
     var f = el('div', 'field'); f.style.marginTop = '12px'; f.appendChild(el('span', 'lab', 'استعادة من نسخة'));
@@ -454,14 +454,16 @@ function drawHome(app) {
 function drawCourse(app) {
   var c = courseOf(R.key), d = S.data[R.key];
   tint(document.body, c.color);
-  app.appendChild(topBar(function () { go('home'); }));
+  var bar = topBar(function () { go('home'); });
+  app.appendChild(bar);
   title(app, c.code, c.name);
-  var tabs = el('div', 'pills');
-  [['students', 'الطلاب', 'users'], ['grades', 'سجل الدرجات', 'grades'], ['subs', 'التسليمات', 'inbox']].forEach(function (t) {
+  /* 0.16: the course tabs sit in the top row, next to ⋯ and the back arrow */
+  var tabs = el('div', 'pills inbar');
+  [['students', 'الطلاب', 'users'], ['subs', 'التسليمات', 'inbox'], ['grades', 'سجل الدرجات', 'grades']].forEach(function (t) {
     var b = el('button', 'pill' + (R.tab === t[0] ? ' on' : '')); b.type = 'button'; b.innerHTML = svg(t[2]); b.appendChild(document.createTextNode(t[1]));
     b.onclick = function () { go('course', R.key, t[0]); }; tabs.appendChild(b);
   });
-  app.appendChild(tabs);
+  bar.insertBefore(tabs, bar.querySelector('.sp'));
   if (R.tab === 'grades') drawGrades(app, d);
   else if (R.tab === 'subs') drawStation(app, d);
   else drawStudents(app, d);
@@ -537,7 +539,7 @@ function bulkBar(app, d) {
     app.appendChild(b); return;
   }
   if (may(d, 'sec')) b.appendChild(btn('الشعبة', '', function () { bulkSection(d, ids); }, 'list'));
-  if (may(d, 'grade')) b.appendChild(btn('درجة موحّدة', '', function () { bulkGrade(d, ids, ''); }, 'grades'));
+  if (may(d, 'grade')) b.appendChild(btn('موحّدة', '', function () { bulkGrade(d, ids, ''); }, 'grades'));
   if (may(d, 'grade')) b.appendChild(btn('صفر', '', function () { bulkGrade(d, ids, '0'); }));
   b.appendChild(btn('تصدير', '', function () { openExport(d, ids); }, 'export'));
   if (may(d, 'del')) b.appendChild(btn('حذف', 'dz', function () {
@@ -585,7 +587,7 @@ function bulkGrade(d, ids, preset) {
 function srcTag(it) { return it.source === 'moodle' ? el('span', 'tag moodle', 'Moodle') : it.source === 'manual' ? el('span', 'tag', 'يدوي') : el('span', 'tag', 'EduSpace'); }
 function drawGrades(app, d) {
   var two = !!(d.nums && Object.keys(d.nums).length);   /* 0.12: the two numbers of EduSpace (the record, the performance) */
-  toolbar(app, d, (may(d, 'pub') ? [btn('نشر', 'sec', function () { openPublish(d); }, 'export')] : []).concat([btn('التوزيع', 'sec', function () { treeSheet(d); }, 'tree'), btn('استيراد من مودل', 'sec', function () { importInfo(); }, 'import'), btn('تصدير', '', function () { openExport(d, null); }, 'export')]));
+  toolbar(app, d, (may(d, 'pub') ? [btn('نشر', 'sec', function () { openPublish(d); }, 'export')] : []).concat([btn('التوزيع', 'sec', function () { treeSheet(d); }, 'tree'), btn('مودل', 'sec', function () { importInfo(); }, 'import'), btn('تصدير', '', function () { openExport(d, null); }, 'export')]));
   var list = visible(d), tw = el('div', 'tw'), t = el('table', 'gb');
   var hr = el('tr'), h0 = el('th', 'st', 'الطالب'); hr.appendChild(h0);
   var of = 0;
@@ -731,7 +733,7 @@ function openExport(d, ids) {
       var o = el('label', 'opt'), k = el('input'); k.type = 'checkbox'; k.checked = true; k.value = it.id;
       o.appendChild(k); o.appendChild(document.createTextNode(it.code + ' · ' + it.title + ' (من ' + it.max + ')')); o.appendChild(srcTag(it)); b.appendChild(o); return k;
     });
-    short.appendChild(btn('تكليفات Moodle فقط', 'sec', function () { boxes.forEach(function (k, i) { k.checked = d.items[i].source === 'moodle'; }); }));
+    short.appendChild(btn('Moodle', 'sec', function () { boxes.forEach(function (k, i) { k.checked = d.items[i].source === 'moodle'; }); }));
     short.appendChild(btn('الكل', 'sec', function () { boxes.forEach(function (k) { k.checked = true; }); }));
     var f = el('div', 'field'); f.style.marginTop = '12px'; f.appendChild(el('label', '', 'الصيغة'));
     var s = el('select'); s.id = 'ex-f';

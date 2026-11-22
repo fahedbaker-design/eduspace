@@ -42,6 +42,7 @@ h3{font-size:18px;line-height:1.4;font-weight:700;margin:0}
 .btn:disabled{opacity:.4}
 /* pills (tabs and filters) */
 .pills{display:flex;gap:8px;overflow-x:auto;margin:0 0 16px;padding:2px}
+.pills.inbar{margin:0 8px 0 0;flex:0 1 auto;min-width:0}
 .pill{appearance:none;border:0;border-radius:999px;min-height:40px;padding:0 16px;font-size:14px;font-weight:700;background:var(--card);color:var(--fg2);box-shadow:inset 0 0 0 1px var(--line);cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap}
 .pill.on{background:var(--fg);color:#fff;box-shadow:none}
 .badge{display:inline-flex;align-items:center;background:var(--fg);color:#fff;border-radius:999px;padding:0 10px;line-height:24px;font-size:12px;font-weight:700;white-space:nowrap}

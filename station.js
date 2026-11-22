@@ -563,7 +563,7 @@ function textBlock(V, host, html) {
     var row = el('div', 'row'); row.style.gap = '8px';
     HL_COLORS.forEach(function (c) { var b = el('button', 'hlc'); b.type = 'button'; b.title = c[1]; b.style.background = c[0]; b.onclick = function () { h.c = c[0]; dirty(V); paint(); }; row.appendChild(b); });
     row.appendChild(el('span', 'sp'));
-    row.appendChild(btn('إزالة التظليل', 'sec', function () { V.m.hl.splice(k, 1); V.undo.push({ hl: true, h: h, at: k }); dirty(V); ed.textContent = ''; paint(); }, 'del'));
+    row.appendChild(btn('إزالة', 'sec', function () { V.m.hl.splice(k, 1); V.undo.push({ hl: true, h: h, at: k }); dirty(V); ed.textContent = ''; paint(); }, 'del'));
     ed.appendChild(row); setTimeout(function () { ta.focus(); }, 30);
   }
   V.paintText = paint;
@@ -792,11 +792,11 @@ function openStorage() {
           var t = el('div', 'sp'); t.appendChild(el('b', '', c.code + ' · ' + q[1]));
           t.appendChild(el('div', 'n12', pl(x.n, 'ملف', 'ملفات') + ' · ' + size(x.f) + (x.m ? ' · ' + pl(x.m, 'تصحيح', 'تصحيحات') + (x.a ? ' · صوت ' + size(x.a) : '') : '') + (x.ready ? ' · ' + x.ready + ' لم يُرسل' : '')));
           row.appendChild(t);
-          row.appendChild(btn('حذف الملفات', 'sec', function () {
+          row.appendChild(btn('حذف', 'sec', function () {
             if (!confirm('تُحذف ملفات التسليمات المنزَّلة لهذا التكليف (تُنزَّل من جديد عند الحاجة). كتابتك عليها تبقى. متابعة؟')) return;
             Promise.all(files.filter(function (f) { return f.v.course + '|' + f.v.code === k; }).map(function (f) { return fDel('files', f.k); })).then(load);
           }, 'del'));
-          if (x.m) row.appendChild(btn('حذف المُرسَل', 'sec', function () {
+          if (x.m) row.appendChild(btn('تنظيف', 'sec', function () {
             if (!confirm('تُحذف من الجهاز التصحيحات التي أُرسلت لهذا التكليف (تبقى عند الطلاب). متابعة؟')) return;
             Promise.all(marks.filter(function (m) { return m.k.indexOf(k + '|') === 0 && m.v.state === 'sent'; }).map(function (m) { return fDel('marks', m.k); })).then(load);
           }, 'del'));
