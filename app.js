@@ -1,8 +1,8 @@
-/* EduSpace offline — 0.11.0: one version number with the panel (MAJOR.MINOR.PATCH); a teaching assistant's device (only his courses, his permissions: «can», read-only items); a warning when the panel's major version differs. 0.5.4: names of naming_v1.md («سجل الدرجات»، «استيراد من مودل»، «كود الربط»). 0.5.3: the sync state on the right under the title; the version under the mark; each layer of the progress bar has its own bubble. 0.5.2: round buttons on the right, the mark alone on the left; the sync state under the title; home cards at the bottom; the progress bar tells its layers on a tap; a new version reloads itself. 0.5.1: the version next to the mark. 0.5: two-way sync — every change is a record in the outbox (grade, section, publish, removal) with the value it started from; «مزامنة الآن» sends them, then downloads; a cell changed in both places comes back as a conflict to decide. 0.4: linked to EduSpace (read only: «تنزيل بياناتي» brings the real courses; editing returns with two-way sync); tips on round buttons. 0.2: the approved style (handoff/brand_rules.md); 0.1: demo data, simulated sync.
+/* EduSpace offline — 0.17.0: «حذف المساق» in the course bar (the teacher's iPad deletes as the panel does: to the Drive trash; an empty course at once, any other after a confirmation); after every sync everything of a course no longer in the list (deleted or archived) leaves the device (purgeGone). 0.11.0: one version number with the panel (MAJOR.MINOR.PATCH); a teaching assistant's device (only his courses, his permissions: «can», read-only items); a warning when the panel's major version differs. 0.5.4: names of naming_v1.md («سجل الدرجات»، «استيراد من مودل»، «كود الربط»). 0.5.3: the sync state on the right under the title; the version under the mark; each layer of the progress bar has its own bubble. 0.5.2: round buttons on the right, the mark alone on the left; the sync state under the title; home cards at the bottom; the progress bar tells its layers on a tap; a new version reloads itself. 0.5.1: the version next to the mark. 0.5: two-way sync — every change is a record in the outbox (grade, section, publish, removal) with the value it started from; «مزامنة الآن» sends them, then downloads; a cell changed in both places comes back as a conflict to decide. 0.4: linked to EduSpace (read only: «تنزيل بياناتي» brings the real courses; editing returns with two-way sync); tips on round buttons. 0.2: the approved style (handoff/brand_rules.md); 0.1: demo data, simulated sync.
  * Everything is kept on the device (IndexedDB); every change is written to an outbox that the sync sends later.
  * Views: home (courses) · course: students | grades | submissions · sheets: sync, export, bulk, backup. */
 'use strict';
-var VERSION = '0.16.0';                 /* the system's version: the same number as the panel (handoff/backlog.md) */
+var VERSION = '0.17.0';                 /* the system's version: the same number as the panel (handoff/backlog.md) */
 var $ = function (s, r) { return (r || document).querySelector(s); };
 var ICON = {
   sync: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
@@ -253,7 +253,46 @@ function syncNow() {
     });
     persist();
     return sendReady().then(function (n) { sum.fb = n; }, function () { /* tried again at the next sync */ });
-  }).then(function () { return pull(); }).then(function () { stAfterSync(); sum.ms = Date.now() - t0; sum.server = S.lastMs || 0; return sum; });
+  }).then(function () { return pull(); }).then(function () { return purgeGone(); }).then(function () { stAfterSync(); sum.ms = Date.now() - t0; sum.server = S.lastMs || 0; return sum; });
+}
+/* ===================== deleting a course (0.17) ===================== */
+/* every file and correction kept on the iPad for a course that is no longer in the list (deleted or archived in the
+   panel, or from this iPad) goes, after every sync: nothing of it comes back */
+function purgeGone() {
+  var live = {}; S.courses.forEach(function (c) { live[c.key] = 1; });
+  return Promise.all([fAll('files'), fAll('marks')]).then(function (r) {
+    var gone = r[0].filter(function (x) { return !live[x.v.course]; }).map(function (x) { return fDel('files', x.k); })
+      .concat(r[1].filter(function (x) { return !live[String(x.k).split('|')[0]]; }).map(function (x) { return fDel('marks', x.k); }));
+    return Promise.all(gone);
+  }).catch(function () { /* tried again after the next sync */ });
+}
+function dropCourse(key) {
+  S.courses = S.courses.filter(function (c) { return c.key !== key; }); delete S.data[key];
+  S.outbox = (S.outbox || []).filter(function (o) { return o.course !== key; }); persist();
+  return purgeGone();
+}
+/* an empty course goes at once; a course that holds anything asks first, listing what goes with it */
+function delCourse(c) {
+  if (!navigator.onLine) { say('حذف المساق يحتاج الإنترنت'); return; }
+  function gone(x) { dropCourse(c.key).then(function () { go('home'); say(x && x.courseDeleted ? 'حُذف المساق ' + c.code + ' من الفصل ومن القائمة. الملفات في سلة Drive.' : 'حُذف المساق ' + c.code + '. الملفات في سلة Drive.'); }); }
+  function del() { say('جارٍ الحذف…'); return api(S.link, 'delete', { c: c.key }).then(gone).catch(function (e) { fail('تعذّر الحذف', e); }); }
+  say('جارٍ فحص محتوى المساق…');
+  api(S.link, 'delinfo', { c: c.key }).then(function (x) {
+    if (x.gone) { gone(null); return; }
+    var p = x.info, st = p.stats;
+    if (!st.students && !st.lectures && !st.assignments && !st.submitted) { del(); return; }
+    return fAll('marks').then(function (all) {
+      var unsent = all.filter(function (m) { return String(m.k).indexOf(c.key + '|') === 0 && m.v.state !== 'sent'; }).length;
+      sheet('حذف المساق ' + c.code + '؟', function (b) {
+        var t = el('table', 'kv');
+        [['المساق', p.code + ' – ' + p.courseName], ['الفصل', p.semester], ['الطلاب', st.students], ['المحاضرات', st.lectures], ['التكليفات', st.assignments], ['من سلّموا', st.submitted]]
+          .concat(unsent ? [['تصحيحات لم تُرسل', unsent]] : []).forEach(function (r) { var tr = el('tr'); tr.appendChild(el('td', 'n14', r[0])); tr.appendChild(el('td', '', String(r[1]))); t.appendChild(tr); });
+        b.appendChild(t);
+        b.appendChild(el('p', 'n14', (p.deletesCourse ? 'هذا هو الفصل الوحيد للمساق، فيُحذف المساق نفسه ومشروعه ورابطه. ' : '') +
+          'تُنقل كل ملفاته، ومعها تسليمات الطلاب ودرجاتهم، إلى سلة Drive (تبقى نحو 30 يومًا)، ويختفي من اللوحة ومن هذا الجهاز.'));
+      }, [['حذف', 'dz', function (h) { h.close(); del(); }, 'del']]);
+    });
+  }).catch(function (e) { fail('تعذّر فحص المساق', e); });
 }
 function openLink() {
   sheet('الربط بـ EduSpace', function (b) {
@@ -464,6 +503,8 @@ function drawCourse(app) {
     b.onclick = function () { go('course', R.key, t[0]); }; tabs.appendChild(b);
   });
   bar.insertBefore(tabs, bar.querySelector('.sp'));
+  /* 0.17: the teacher's iPad deletes a course as the panel does: to the Drive trash, on both sides */
+  if (!S.demo && S.link && !S.owner) { var dl = ico('del', 'حذف المساق', function () { delCourse(c); }); dl.classList.add('red'); bar.insertBefore(dl, bar.querySelector('.sp')); }
   if (R.tab === 'grades') drawGrades(app, d);
   else if (R.tab === 'subs') drawStation(app, d);
   else drawStudents(app, d);
