@@ -1,8 +1,8 @@
-/* EduSpace offline — 0.5.3: the sync state on the right under the title; the version under the mark; each layer of the progress bar has its own bubble. 0.5.2: round buttons on the right, the mark alone on the left; the sync state under the title; home cards at the bottom; the progress bar tells its layers on a tap; a new version reloads itself. 0.5.1: the version next to the mark. 0.5: two-way sync — every change is a record in the outbox (grade, section, publish, removal) with the value it started from; «مزامنة الآن» sends them, then downloads; a cell changed in both places comes back as a conflict to decide. 0.4: linked to EduSpace (read only: «تنزيل بياناتي» brings the real courses; editing returns with two-way sync); tips on round buttons. 0.2: the approved style (handoff/brand_rules.md); 0.1: demo data, simulated sync.
+/* EduSpace offline — 0.5.4: names of naming_v1.md («سجل الدرجات»، «استيراد من مودل»، «كود الربط»). 0.5.3: the sync state on the right under the title; the version under the mark; each layer of the progress bar has its own bubble. 0.5.2: round buttons on the right, the mark alone on the left; the sync state under the title; home cards at the bottom; the progress bar tells its layers on a tap; a new version reloads itself. 0.5.1: the version next to the mark. 0.5: two-way sync — every change is a record in the outbox (grade, section, publish, removal) with the value it started from; «مزامنة الآن» sends them, then downloads; a cell changed in both places comes back as a conflict to decide. 0.4: linked to EduSpace (read only: «تنزيل بياناتي» brings the real courses; editing returns with two-way sync); tips on round buttons. 0.2: the approved style (handoff/brand_rules.md); 0.1: demo data, simulated sync.
  * Everything is kept on the device (IndexedDB); every change is written to an outbox that the sync sends later.
  * Views: home (courses) · course: students | grades | submissions · sheets: sync, export, bulk, backup. */
 'use strict';
-var VERSION = '0.5.3';
+var VERSION = '0.5.4';
 var $ = function (s, r) { return (r || document).querySelector(s); };
 var ICON = {
   sync: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
@@ -156,7 +156,7 @@ function api(link, op, extra) {
   return fetch(link.url, { method: 'POST', body: JSON.stringify(body) })
     .catch(function () { throw new Error('تعذّر الوصول إلى خدمة الربط. تأكد من الإنترنت، ومن أنك فتحت رابط الخدمة من اللوحة مرة واحدة وسمحت بالإذن.'); })
     .then(function (r) {
-      if (!r.ok) throw new Error('ردّت خدمة الربط برمز ' + r.status + '. افتح رابطها من اللوحة («تطبيق الآيباد» ← «فتح خدمة الربط») وتأكد أنها تعرض {"ok":true}.');
+      if (!r.ok) throw new Error('ردّت خدمة الربط بالرقم ' + r.status + '. افتح رابطها من اللوحة («تطبيق الآيباد» ← «فتح خدمة الربط») وتأكد أنها تعرض {"ok":true}.');
       return r.text();
     })
     .then(function (t) {
@@ -221,8 +221,8 @@ function openLink() {
       b.appendChild(el('p', 'n12', 'تعدّل هنا بلا إنترنت، و«مزامنة الآن» ترسل تعديلاتك إلى EduSpace ثم تنزّل آخر ما فيها.'));
       return;
     }
-    b.appendChild(el('p', 'n14', 'في اللوحة: بطاقة «تطبيق الآيباد» ← «إنشاء رمز ربط». انسخ الرمز والصقه هنا.'));
-    var f = el('div', 'field'); f.appendChild(el('label', '', 'رمز الربط'));
+    b.appendChild(el('p', 'n14', 'في اللوحة: بطاقة «تطبيق الآيباد» ← «إنشاء كود ربط». انسخ الكود والصقه هنا.'));
+    var f = el('div', 'field'); f.appendChild(el('label', '', 'كود الربط'));
     var t = el('textarea', 'inp'); t.id = 'lk-code'; t.dir = 'ltr'; t.style.cssText = 'min-height:96px;border-radius:18px;padding:12px 16px;font-size:14px;width:100%';
     f.appendChild(t); b.appendChild(f);
   }, S.link ? [['مزامنة الآن', '', function (h) {
@@ -230,11 +230,11 @@ function openLink() {
     (S.demo ? pull() : syncNow()).then(function () { h.close(); go('home'); say('تمت المزامنة مع EduSpace.'); })
       .catch(function (e) { h.close(); fail('تعذّر التنزيل', e); });
   }, 'import'], ['إلغاء الربط', 'sec', function (h) {
-    if (!confirm('إلغاء ربط هذا الجهاز؟ تبقى البيانات النازلة عليه، ولا يتصل بعدها حتى تربطه برمز جديد.')) return;
+    if (!confirm('إلغاء ربط هذا الجهاز؟ تبقى البيانات النازلة عليه، ولا يتصل بعدها حتى تربطه بكود جديد.')) return;
     delete S.link; persist(); h.close(); draw();
   }]] : [['ربط', '', function (h) {
     var lk = parseCode($('#lk-code').value);
-    if (!lk) { say('الرمز غير صحيح. انسخه كاملًا من اللوحة.'); return; }
+    if (!lk) { say('الكود غير صحيح. انسخه كاملًا من اللوحة.'); return; }
     if (!navigator.onLine) { say('الربط يحتاج إنترنت مرة واحدة.'); return; }
     api(lk, 'ping').then(function (x) {
       lk.device = x.device; S.link = lk; persist();
@@ -414,7 +414,7 @@ function drawCourse(app) {
   app.appendChild(topBar(function () { go('home'); }));
   title(app, c.code, c.name);
   var tabs = el('div', 'pills');
-  [['students', 'الطلاب', 'users'], ['grades', 'الدرجات', 'grades'], ['subs', 'التسليمات', 'inbox']].forEach(function (t) {
+  [['students', 'الطلاب', 'users'], ['grades', 'سجل الدرجات', 'grades'], ['subs', 'التسليمات', 'inbox']].forEach(function (t) {
     var b = el('button', 'pill' + (R.tab === t[0] ? ' on' : '')); b.type = 'button'; b.innerHTML = svg(t[2]); b.appendChild(document.createTextNode(t[1]));
     b.onclick = function () { go('course', R.key, t[0]); }; tabs.appendChild(b);
   });
@@ -545,7 +545,7 @@ function bulkGrade(d, ids, preset) {
 /* ----- grades ----- */
 function srcTag(it) { return it.source === 'moodle' ? el('span', 'tag moodle', 'Moodle') : it.source === 'manual' ? el('span', 'tag', 'يدوي') : el('span', 'tag', 'EduSpace'); }
 function drawGrades(app, d) {
-  toolbar(app, d, [btn('استيراد من الخارج', 'sec', function () { importInfo(); }, 'import'), btn('تصدير', '', function () { openExport(d, null); }, 'export')]);
+  toolbar(app, d, [btn('استيراد من مودل', 'sec', function () { importInfo(); }, 'import'), btn('تصدير', '', function () { openExport(d, null); }, 'export')]);
   var list = visible(d), tw = el('div', 'tw'), t = el('table', 'gb');
   var hr = el('tr'), h0 = el('th', 'st', 'الطالب'); hr.appendChild(h0);
   var of = 0;
@@ -598,7 +598,7 @@ function itemSheet(d, it) {
   }, 'eye']]);
 }
 function importInfo() {
-  sheet('استيراد من الخارج', function (b) {
+  sheet('استيراد من مودل', function (b) {
     b.appendChild(el('p', 'n14', 'المرحلة الثالثة: تختار ملف zip نزّلته من Moodle، فيُفك على الجهاز، ويُنشأ تكليف مستورد بوسم Moodle، وتُطابق التسليمات بالطلاب، وتدخل محطة التصحيح.'));
     b.appendChild(el('p', 'n12', 'لبنائها أحتاج zip تسليمات حقيقيًا من Moodle (أو لقطة لأسماء المجلدات داخله).'));
   });
