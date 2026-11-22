@@ -2,7 +2,7 @@
  * Everything is kept on the device (IndexedDB); every change is written to an outbox that the sync sends later.
  * Views: home (courses) · course: students | grades | submissions · sheets: sync, export, bulk, backup. */
 'use strict';
-var VERSION = '0.15.0';                 /* the system's version: the same number as the panel (handoff/backlog.md) */
+var VERSION = '0.15.1';                 /* the system's version: the same number as the panel (handoff/backlog.md) */
 var $ = function (s, r) { return (r || document).querySelector(s); };
 var ICON = {
   sync: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
@@ -779,3 +779,35 @@ if ('serviceWorker' in navigator) {
 if (navigator.storage && navigator.storage.persist) navigator.storage.persist();
 kvGet('state').then(function (s) { S = (s && s.v >= 2) ? s : demo(); if (S !== s) persist(); fromHash(); draw(); })
   .catch(function (e) { $('#app').textContent = 'تعذّر فتح التخزين على الجهاز: ' + e.message; });
+/* 0.15.1: copying gives only what is seen. The invisible direction marks kept around numbers (so a number keeps its
+   place in Arabic text) never leave the page; one cell gives its value alone; several cells of a table give their
+   values, a tab between cells and a line between rows, ready for Excel. */
+(function () {
+  var MARKS = /[‎‏‪-‮⁦-⁩؜﻿]/g;
+  function clean(t) { return String(t || '').replace(MARKS, '').replace(/[ \t ]+/g, ' ').replace(/ *\n */g, '\n').trim(); }
+  function cellText(c) { var i = c.querySelector('input,select,textarea'); return clean(i ? (i.value != null ? i.value : '') : (c.innerText || c.textContent)).replace(/\n+/g, ' '); }
+  document.addEventListener('copy', function (e) {
+    var a = document.activeElement;
+    if (a && /^(INPUT|TEXTAREA)$/.test(a.tagName)) {          /* inside a field: its own selection, cleaned */
+      var v = a.value.slice(a.selectionStart || 0, a.selectionEnd || 0);
+      if (v && e.clipboardData) { e.clipboardData.setData('text/plain', clean(v)); e.preventDefault(); }
+      return;
+    }
+    var sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount || !e.clipboardData) return;
+    var r = sel.getRangeAt(0), box = r.commonAncestorContainer;
+    if (box.nodeType !== 1) box = box.parentNode;
+    var table = box.closest ? box.closest('table') : null, text;
+    var inCell = box.closest ? box.closest('td,th') : null;
+    if (table && !inCell) {
+      var rows = [];
+      [].forEach.call(table.rows, function (tr) {
+        var cells = [].filter.call(tr.cells, function (c) { return r.intersectsNode(c); });
+        if (cells.length) rows.push(cells.map(cellText).join('\t'));
+      });
+      text = rows.join('\n');
+    } else text = clean(sel.toString());
+    e.clipboardData.setData('text/plain', text);
+    e.preventDefault();
+  });
+})();
