@@ -1,4 +1,5 @@
-/* EduSpace offline — the grading station (0.13.0: a submitted text is shown as text — selectable, copyable — and the
+/* EduSpace offline — the grading station (0.14.0: a background queue — files come down a few at a time and the
+   student opened jumps the queue; «إرسال» sends in the background; lighter annotated pages. 0.13.0: a submitted text is shown as text — selectable, copyable — and the
    teacher highlights parts of it with a note on each (hl); links open; a written note for the whole submission;
    Word / Excel / PowerPoint files are opened in their own apps. 0.12.0).
    The EduSpace submissions of one assignment come down to the iPad (Sync: files / file), the teacher writes on them
@@ -54,9 +55,100 @@ function stList(key, code) {
 function stFetch(key, code, f) {
   return fGet('files', f.id).then(function (have) {
     if (have) return have;
-    return api(S.link, 'file', { c: key, i: code, f: f.id }).then(function (x) {
-      var r = { id: f.id, name: x.name || f.name, mime: x.mime || f.mime, size: x.size || f.size, blob: blobOf(x.b64, x.mime || f.mime), course: key, code: code, at: Date.now() };
-      return fPut('files', f.id, r).then(function () { return r; });
+    return new Promise(function (ok, no) { (Q.wait[f.id] = Q.wait[f.id] || []).push([ok, no]); qDown(key, code, [f], 9); });
+  });
+}
+
+/* ===================== the background queue (0.14): downloads and sends, one after the other =====================
+   Files come down a few at a time (files2, about 4 MB a call); a student opened in the viewer jumps the queue with the
+   next three; «إرسال» puts the feedback here and the teacher moves on. Stops without internet, goes on when it is back. */
+var Q = { jobs: [], busy: false, wait: {}, done: 0, fail: 0 };
+function qDown(key, code, files, pri) {
+  files.forEach(function (f) {
+    var j = Q.jobs.filter(function (x) { return x.t === 'down' && x.f.id === f.id; })[0];
+    if (j) { j.pri = Math.max(j.pri, pri); return; }
+    Q.jobs.push({ t: 'down', key: key, code: code, f: f, pri: pri, at: Q.jobs.length });
+  });
+  qRun();
+}
+function qSend(k) { if (!Q.jobs.some(function (x) { return x.t === 'send' && x.k === k; })) Q.jobs.push({ t: 'send', k: k, pri: 8, at: Q.jobs.length }); qRun(); }
+function qNext() {
+  Q.jobs.sort(function (a, b) { return b.pri - a.pri || a.at - b.at; });
+  return Q.jobs[0];
+}
+function qRun() {
+  qBar();
+  if (Q.busy || !Q.jobs.length || !S.link || S.demo) return;
+  if (!navigator.onLine) return;
+  Q.busy = true;
+  var j = qNext(), p;
+  if (j.t === 'send') { Q.jobs.splice(Q.jobs.indexOf(j), 1); p = qDoSend(j.k); }
+  else {
+    /* the first job decides the assignment; up to 8 of its files go in one call */
+    var batch = Q.jobs.filter(function (x) { return x.t === 'down' && x.key === j.key && x.code === j.code; }).slice(0, 8);
+    batch.forEach(function (x) { Q.jobs.splice(Q.jobs.indexOf(x), 1); });
+    p = onDevice().then(function (have) {
+      var need = batch.filter(function (x) { if (have[x.f.id]) { qWake(x.f.id); return false; } return true; });
+      if (!need.length) return;
+      return api(S.link, 'files2', { c: j.key, i: j.code, f: need.map(function (x) { return x.f.id; }) }).then(function (r) {
+        var by = {}; need.forEach(function (x) { by[x.f.id] = x; });
+        return Promise.all((r.got || []).map(function (g) {
+          var x = by[g.id]; if (!x) return;
+          if (g.err) { Q.fail++; qWake(g.id, new Error(g.err)); return; }
+          var rec = { id: g.id, name: g.name || x.f.name, mime: g.mime || x.f.mime, size: g.size || x.f.size, blob: blobOf(g.b64, g.mime || x.f.mime), course: x.key, code: x.code, at: Date.now() };
+          return fPut('files', g.id, rec).then(function () { Q.done++; qWake(g.id, null, rec); stRowReady(x.key, x.code, g.id); });
+        })).then(function () { (r.left || []).forEach(function (id) { if (by[id]) Q.jobs.push(by[id]); }); });
+      }, function (e) {       /* the call failed: back to the queue, a little later */
+        need.forEach(function (x) { x.pri = Math.min(x.pri, 1); Q.jobs.push(x); });
+        throw e;
+      });
+    });
+  }
+  p.catch(function () { return new Promise(function (ok) { setTimeout(ok, 4000); }); })
+    .then(function () { Q.busy = false; qRun(); });
+}
+function qWake(id, err, rec) {
+  (Q.wait[id] || []).forEach(function (w) { if (err) w[1](err); else if (rec) w[0](rec); else fGet('files', id).then(w[0], w[1]); });
+  delete Q.wait[id];
+}
+function qDoSend(k) {
+  return fGet('marks', k).then(function (m) {
+    if (!m || m.state !== 'ready') return;
+    var q = k.split('|'), d = S.data[q[0]]; if (!d) return;
+    var row = (stOf(d, q[1]).list || []).filter(function (r) { return r.s === q[2]; })[0];
+    if (!row) return;
+    m.state = 'sending'; qBar();
+    return sendFeedback(q[0], q[1], row, m).then(function () { stRowReady(q[0], q[1]); if (VW && mKey(VW.key, VW.code, VW.row.s) === k && VW.m) { VW.m.state = 'sent'; VW.m.sentAt = m.sentAt; } },
+      function (e) { m.state = 'ready'; m.err = String(e.message || e); Q.fail++; return fPut('marks', k, strip(m)).then(function () { stRowReady(q[0], q[1]); throw e; }); });
+  });
+}
+/* the small capsule that says what the queue is doing */
+function qBar() {
+  var b = document.getElementById('qbar');
+  if (!b) { b = el('div', 'qbar'); b.id = 'qbar'; document.body.appendChild(b); }
+  var d = Q.jobs.filter(function (x) { return x.t === 'down'; }).length + (Q.busy ? 1 : 0), sd = Q.jobs.filter(function (x) { return x.t === 'send'; }).length;
+  if (!Q.jobs.length && !Q.busy) { b.hidden = true; return; }
+  b.hidden = false;
+  b.textContent = !navigator.onLine ? 'متوقف: لا إنترنت · ' + (d + sd) + ' بالانتظار' : (d ? 'ينزل ' + d : '') + (d && sd ? ' · ' : '') + (sd ? 'يُرسل ' + sd : '') + (Q.done ? ' · وصل ' + Q.done : '');
+}
+window.addEventListener('online', function () { qRun(); });
+window.addEventListener('offline', function () { qBar(); });
+/* a row of the station's list changes as soon as its file arrives or its feedback is sent (no full redraw while working) */
+var ST_T;
+function stRowReady() { if (VW) return; clearTimeout(ST_T); ST_T = setTimeout(function () { if (R.view === 'course' && R.tab === 'subs' && !document.querySelector('.ov')) draw(); }, 600); }
+/* every file of one assignment, in the order of the list */
+function stQueueAll(key, code) {
+  var st = stOf(S.data[key], code), files = [];
+  st.list.slice().sort(function (a, b) { return subjName(S.data[key], a).localeCompare(subjName(S.data[key], b), 'ar'); })
+    .forEach(function (r) { r.files.forEach(function (f) { files.push(f); }); });
+  qDown(key, code, files, 1);
+}
+/* after each sync: the lists the teacher has opened are refreshed, and their new files start coming down */
+function stAfterSync() {
+  Object.keys(S.data || {}).forEach(function (key) {
+    var d = S.data[key]; Object.keys(d.st || {}).forEach(function (code) {
+      if (!d.st[code].at || !d.items.some(function (it) { return it.id === code; })) return;
+      stList(key, code).then(function () { stQueueAll(key, code); }).catch(function () {});
     });
   });
 }
@@ -88,11 +180,11 @@ function drawStation(app, d) {
   var info = el('span', 'n14 sp', it.title + ' · من ' + it.max); bar.appendChild(info);
   if (S.demo) { app.appendChild(bar); var q = el('div', 'ph'); q.appendChild(el('p', '', 'محطة التصحيح تعمل مع EduSpace: اربط الجهاز أولًا.')); app.appendChild(q); return; }
   if (!may(d, 'grade') || it.ro) { bar.appendChild(el('span', 'tag', 'للعرض فقط')); }
-  bar.appendChild(btn('تحديث القائمة', 'sec', function () { busy(stList(R.key, it.id), 'تُحدَّث القائمة…').then(draw); }, 'sync'));
-  bar.appendChild(btn('تنزيل الكل', 'sec', function () { downloadAll(R.key, it.id); }, 'import'));
+  bar.appendChild(btn('تحديث', 'sec', function () { busy(stList(R.key, it.id), 'تُحدَّث القائمة…').then(function () { stQueueAll(R.key, it.id); draw(); }); }, 'sync'));
+  bar.appendChild(btn('تنزيل', 'sec', function () { downloadAll(R.key, it.id); }, 'import'));
   app.appendChild(bar);
   var box = el('div', 'tw'), t = el('table', 'stn'); box.appendChild(t); app.appendChild(box);
-  if (!st.at) { busy(stList(R.key, it.id), 'تُجلب قائمة التسليمات…').then(draw).catch(function () {}); }
+  if (!st.at) { busy(stList(R.key, it.id), 'تُجلب قائمة التسليمات…').then(function () { stQueueAll(R.key, it.id); draw(); }).catch(function () {}); }
   Promise.all([onDevice(), fAll('marks')]).then(function (r) {
     var have = r[0], marks = {}; r[1].forEach(function (x) { marks[x.k] = x.v; });
     var hr = el('tr'); ['الطالب', 'التسليم', 'ما سُلِّم', 'الحالة', 'الدرجة'].forEach(function (h) { hr.appendChild(el('th', '', h)); }); t.appendChild(hr);
@@ -106,7 +198,8 @@ function drawStation(app, d) {
       if ((row.links || []).length) what.push(pl(row.links.length, 'رابط', 'روابط'));
       if (row.files.length) what.push(pl(row.files.length, 'ملف', 'ملفات') + ' · ' + size(sz) + (down === row.files.length ? ' · على الجهاز' : down ? ' · ' + down + ' على الجهاز' : ''));
       tr.appendChild(el('td', 'n14', what.join(' · ')));
-      var s = el('td'), k = m && m.state === 'ready' ? ['جاهز للإرسال', 'warn'] : m && m.state === 'draft' ? ['مسودة', ''] : m && m.state === 'sent' || sent ? ['أُرسل', 'ok'] : null;
+      var sending = Q.jobs.some(function (x) { return x.t === 'send' && x.k === mKey(R.key, it.id, row.s); });
+      var s = el('td'), k = sending ? ['يُرسل', 'warn'] : m && m.state === 'ready' ? ['جاهز للإرسال', 'warn'] : m && m.state === 'draft' ? ['مسودة', ''] : m && m.state === 'sent' || sent ? ['أُرسل', 'ok'] : null;
       if (k) s.appendChild(el('span', 'tag ' + k[1], k[0])); if (m && m.err) s.appendChild(el('span', 'tag bad', 'لم يُرسل'));
       if (m && m.audio || sent && sent.audio) s.appendChild(el('span', 'tag', 'صوت'));
       if (m && m.hl && m.hl.length || sent && sent.hl) s.appendChild(el('span', 'tag', 'تظليل'));
@@ -125,17 +218,9 @@ function busy(p, text) {
 }
 function downloadAll(key, code) {
   if (!navigator.onLine) return say('لا إنترنت الآن');
-  var st = stOf(S.data[key], code), files = [];
-  (st.at ? Promise.resolve(st) : stList(key, code)).then(function (st) {
-    st.list.forEach(function (r) { r.files.forEach(function (f) { files.push(f); }); });
-    var n = 0, i = 0, errs = 0;
-    function next() {
-      if (i >= files.length) { say('نُزّل ' + n + ' ملف' + (errs ? ' · تعذّر ' + errs : '')); draw(); return; }
-      var f = files[i++];
-      stFetch(key, code, f).then(function () { n++; if (n % 3 === 0) say('نُزّل ' + n + ' من ' + files.length); }).catch(function () { errs++; }).then(next);
-    }
-    say('يُنزَّل ' + files.length + ' ملف…'); next();
-  }).catch(function (e) { fail('تنزيل التسليمات', e); });
+  var st = stOf(S.data[key], code);
+  (st.at ? Promise.resolve() : stList(key, code)).then(function () { stQueueAll(key, code); say('بدأ التنزيل في الخلفية. افتح أي طالب وصل ملفه.'); })
+    .catch(function (e) { fail('تنزيل التسليمات', e); });
 }
 
 /* ===================== pdf.js ===================== */
@@ -257,6 +342,9 @@ function openViewer(key, code, list, idx) {
   pages.addEventListener('touchstart', function (e) { var t = e.touches[0]; if (e.target.classList.contains('ink') && (V.finger || (t && t.touchType === 'stylus'))) e.preventDefault(); }, { passive: false });
   pages.addEventListener('touchmove', function (e) { var t = e.touches[0]; if (e.target.classList.contains('ink') && (V.finger || (t && t.touchType === 'stylus'))) e.preventDefault(); }, { passive: false });
 
+  /* this student first, then the next three */
+  qDown(key, code, row.files, 9);
+  list.slice(idx + 1, idx + 4).forEach(function (r) { qDown(key, code, r.files, 5); });
   fGet('marks', mk).then(function (m) {
     V.m = m || { ink: {}, hl: [], note: '', audio: null, amime: '', sec: 0, state: '' };
     V.m.hl = V.m.hl || []; V.m.note = V.m.note || '';
@@ -483,7 +571,7 @@ function pdfOf(pages) {
   put(t + 'trailer\n<< /Size ' + total + ' /Root 1 0 R >>\nstartxref\n' + x0 + '\n%%EOF\n');
   return new Blob(parts, { type: 'application/pdf' });
 }
-function jpegOf(cv) { return new Promise(function (ok, no) { cv.toBlob(function (b) { if (!b) return no(new Error('تعذّر تجهيز الصفحة')); b.arrayBuffer().then(function (x) { ok(new Uint8Array(x)); }); }, 'image/jpeg', 0.62); }); }
+function jpegOf(cv, q) { return new Promise(function (ok, no) { cv.toBlob(function (b) { if (!b) return no(new Error('تعذّر تجهيز الصفحة')); b.arrayBuffer().then(function (x) { ok(new Uint8Array(x)); }); }, 'image/jpeg', q || 0.62); }); }
 /* the submission's pages with the teacher's ink; null if nothing was written */
 function annotated(key, code, row, m) {
   var anyInk = Object.keys(m.ink || {}).some(function (f) { return Object.keys(m.ink[f]).some(function (i) { return m.ink[f][i].length; }); });
@@ -496,11 +584,13 @@ function annotated(key, code, row, m) {
     }).then(function (pp) {
       return (pp || []).reduce(function (q, pg, i) {
         return q.then(function () {
-          var cv = document.createElement('canvas'), sc = Math.min(2, 1600 / Math.max(pg.w, pg.h));
+          /* 0.14: a page with ink stays sharp (1400 px); a page without ink is lighter (1000 px); every page under ~400 KB */
+          var strokes = ((m.ink || {})[f.id] || {})[i] || [], inked = strokes.length > 0;
+          var cv = document.createElement('canvas'), sc = Math.min(2, (inked ? 1400 : 1000) / Math.max(pg.w, pg.h));
           return pg.draw(cv, sc).then(function () {
-            var strokes = ((m.ink || {})[f.id] || {})[i] || [], ic = document.createElement('canvas'); ic.width = cv.width; ic.height = cv.height;
+            var ic = document.createElement('canvas'); ic.width = cv.width; ic.height = cv.height;
             inkDraw(ic.getContext('2d'), strokes, ic.width, ic.height); cv.getContext('2d').drawImage(ic, 0, 0);
-            return jpegOf(cv).then(function (jpg) { out.push({ w: pg.w, h: pg.h, pw: cv.width, ph: cv.height, jpg: jpg }); cv.width = cv.height = ic.width = ic.height = 0; });
+            return jpegOf(cv, inked ? 0.62 : 0.5).then(function (jpg) { return jpg.length > 400000 ? jpegOf(cv, 0.42) : jpg; }).then(function (jpg) { out.push({ w: pg.w, h: pg.h, pw: cv.width, ph: cv.height, jpg: jpg }); cv.width = cv.height = ic.width = ic.height = 0; });
           });
         });
       }, Promise.resolve());
@@ -532,26 +622,18 @@ function sendFeedback(key, code, row, m) {
 }
 function sendOne(V) {
   if (V.rec) return say('أوقف التسجيل أولًا');
-  V.saveNow();
-  if (!navigator.onLine) { V.m.state = 'ready'; V.saveNow(); return say('لا إنترنت: سيُرسل عند المزامنة'); }
-  V.sendB.disabled = true; say('يُجهَّز الملف المصحَّح ويُرسل…');
-  sendFeedback(V.key, V.code, V.row, V.m).then(function () { say('أُرسل. يراه الطالب بعد نشر درجات التكليف.'); })
-    .catch(function (e) { V.m.state = 'ready'; V.m.err = String(e.message || e); V.saveNow(); fail('إرسال الملاحظات', e); })
-    .then(function () { V.sendB.disabled = false; });
+  V.m.state = 'ready'; V.m.err = ''; V.saveNow();
+  var k = mKey(V.key, V.code, V.row.s);
+  setTimeout(function () { qSend(k); }, 450);       /* after the save above */
+  say(navigator.onLine ? 'يُرسل في الخلفية. تابع مع الطالب التالي.' : 'لا إنترنت: يُرسل حين يعود الاتصال.');
 }
 /* at every sync: whatever is marked «ready» */
-function sendReady() {
-  if (!S.link || S.demo || !navigator.onLine) return Promise.resolve(0);
+function sendReady() {     /* at every sync: whatever is marked «ready» joins the queue → how many */
+  if (!S.link || S.demo) return Promise.resolve(0);
   return fAll('marks').then(function (all) {
-    var todo = all.filter(function (x) { return x.v.state === 'ready'; }), n = 0;
-    return todo.reduce(function (p, x) {
-      return p.then(function () {
-        var k = x.k.split('|'), d = S.data[k[0]]; if (!d) return;
-        var row = (stOf(d, k[1]).list || []).filter(function (r) { return r.s === k[2]; })[0];
-        if (!row) return;
-        return sendFeedback(k[0], k[1], row, x.v).then(function () { n++; }).catch(function (e) { x.v.err = String(e.message || e); return fPut('marks', x.k, x.v); });
-      });
-    }, Promise.resolve()).then(function () { return n; });
+    var todo = all.filter(function (x) { return x.v.state === 'ready'; });
+    todo.forEach(function (x) { qSend(x.k); });
+    return todo.length;
   });
 }
 

@@ -2,7 +2,7 @@
  * Everything is kept on the device (IndexedDB); every change is written to an outbox that the sync sends later.
  * Views: home (courses) · course: students | grades | submissions · sheets: sync, export, bulk, backup. */
 'use strict';
-var VERSION = '0.13.1';                 /* the system's version: the same number as the panel (handoff/backlog.md) */
+var VERSION = '0.14.0';                 /* the system's version: the same number as the panel (handoff/backlog.md) */
 var $ = function (s, r) { return (r || document).querySelector(s); };
 var ICON = {
   sync: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
@@ -195,14 +195,18 @@ function fail(title, e) {
 function pull() {
   if (!S.link) return Promise.reject(new Error('اربط الجهاز أولًا'));
   if (!navigator.onLine) return Promise.reject(new Error('لا إنترنت الآن'));
-  return api(S.link, 'pull').then(function (x) {
+  var known = {}; Object.keys(S.data || {}).forEach(function (k) { if (S.data[k].h && !S.demo) known[k] = S.data[k].h; });
+  return api(S.link, 'pull', { h: known }).then(function (x) {
     var courses = [], data = {};
     x.courses.forEach(function (c) {
+      if (c.same && S.data[c.key]) {      /* 0.14: unchanged on the server: what is here stays */
+        courses.push(S.courses.filter(function (o) { return o.key === c.key; })[0]); data[c.key] = S.data[c.key]; return;
+      }
       courses.push({ key: c.key, code: c.code, name: c.name, sem: c.sem, color: c.color });
       var st = {}; c.students.forEach(function (s) { st[s.id] = s; });
       var old = (S.data || {})[c.key] || {};
       data[c.key] = { students: st, secs: c.secs || {}, grades: c.grades || {}, pens: c.pens || {}, can: c.can || null,
-        tree: c.tree || null, values: c.values || {}, nums: c.nums || {}, st: old.st || {},
+        tree: c.tree || null, values: c.values || {}, nums: c.nums || {}, st: old.st || {}, h: c.h || '',
         items: c.items.map(function (it) { it.sub = (c.subs || {})[it.id] || {}; return it; }) };
       /* which subjects have feedback on the server (1 the file, 2 the voice note) */
       Object.keys(c.fbs || {}).forEach(function (code) {
@@ -212,7 +216,7 @@ function pull() {
     });
     var keep = S.demo ? [] : (S.outbox || []);
     if (x.ver && String(x.ver).replace(/^v/, '').split('.')[0] !== VERSION.split('.')[0]) say('إصدار اللوحة ' + x.ver + ' وإصدار التطبيق ' + VERSION + ': حدّث التطبيق أو اللوحة');
-    S = { v: 2, demo: false, readonly: false, link: S.link, owner: x.owner || '', serverVer: x.ver || '', lastSync: x.at, courses: courses, data: data, outbox: keep, seq: S.seq || 0 };
+    S = { v: 2, demo: false, readonly: false, link: S.link, owner: x.owner || '', serverVer: x.ver || '', lastSync: x.at, lastMs: x.ms || 0, courses: courses, data: data, outbox: keep, seq: S.seq || 0 };
     applyOutbox(data);
     persist(); return x;
   });
@@ -235,12 +239,12 @@ function syncNow() {
     });
     persist();
     return sendReady().then(function (n) { sum.fb = n; }, function () { /* tried again at the next sync */ });
-  }).then(function () { return pull(); }).then(function () { return sum; });
+  }).then(function () { return pull(); }).then(function () { stAfterSync(); return sum; });
 }
 function openLink() {
   sheet('الربط بـ EduSpace', function (b) {
     if (S.link) {
-      b.appendChild(el('p', 'n14', 'هذا الجهاز مربوط باسم «' + (S.link.device || 'الآيباد') + '»' + (S.owner ? ' لمساعد التدريس ' + S.owner + ' (مساقاته وصلاحياته فقط)' : '') + '. آخر تنزيل: ' + when(S.lastSync) + '.'));
+      b.appendChild(el('p', 'n14', 'هذا الجهاز مربوط باسم «' + (S.link.device || 'الآيباد') + '»' + (S.owner ? ' لمساعد التدريس ' + S.owner + ' (مساقاته وصلاحياته فقط)' : '') + '. آخر تنزيل: ' + when(S.lastSync) + (S.lastMs ? ' (حضّرته اللوحة في ' + (Math.round(S.lastMs / 100) / 10) + ' ث)' : '') + '.'));
       b.appendChild(el('p', 'n12', 'تعدّل هنا بلا إنترنت، و«مزامنة الآن» ترسل تعديلاتك إلى EduSpace ثم تنزّل آخر ما فيها.'));
       return;
     }
@@ -301,7 +305,7 @@ function openSync() {
       syncNow().then(function (x) {
         h.close(); draw();
         say((x.sent ? 'أُرسل ' + pl(x.sent, 'تغيير', 'تغييرات') + ' وحُدّثت البيانات' : 'حُدّثت البيانات من EduSpace') +
-          (x.conflicts ? ' · ' + pl(x.conflicts, 'تعارض', 'تعارضات') + ': افتح المزامنة لتقرر' : '') + (x.errors ? ' · لم يُرسل ' + x.errors : '') + (x.fb ? ' · أُرسلت ' + pl(x.fb, 'ملاحظة مصحَّحة', 'ملاحظات مصحَّحة') : '') + '.');
+          (x.conflicts ? ' · ' + pl(x.conflicts, 'تعارض', 'تعارضات') + ': افتح المزامنة لتقرر' : '') + (x.errors ? ' · لم يُرسل ' + x.errors : '') + (x.fb ? ' · يُرسل في الخلفية ' + pl(x.fb, 'تصحيح', 'تصحيحات') : '') + '.');
         if (x.conflicts) openSync();
       }).catch(function (e) { h.close(); fail('تعذّرت المزامنة', e); });
       return;
@@ -567,7 +571,7 @@ function bulkGrade(d, ids, preset) {
 function srcTag(it) { return it.source === 'moodle' ? el('span', 'tag moodle', 'Moodle') : it.source === 'manual' ? el('span', 'tag', 'يدوي') : el('span', 'tag', 'EduSpace'); }
 function drawGrades(app, d) {
   var two = !!(d.nums && Object.keys(d.nums).length);   /* 0.12: the two numbers of EduSpace (the record, the performance) */
-  toolbar(app, d, [btn('التوزيع', 'sec', function () { treeSheet(d); }, 'tree'), btn('استيراد من مودل', 'sec', function () { importInfo(); }, 'import'), btn('تصدير', '', function () { openExport(d, null); }, 'export')]);
+  toolbar(app, d, (may(d, 'pub') ? [btn('نشر', 'sec', function () { openPublish(d); }, 'export')] : []).concat([btn('التوزيع', 'sec', function () { treeSheet(d); }, 'tree'), btn('استيراد من مودل', 'sec', function () { importInfo(); }, 'import'), btn('تصدير', '', function () { openExport(d, null); }, 'export')]));
   var list = visible(d), tw = el('div', 'tw'), t = el('table', 'gb');
   var hr = el('tr'), h0 = el('th', 'st', 'الطالب'); hr.appendChild(h0);
   var of = 0;
@@ -614,7 +618,48 @@ function drawGrades(app, d) {
     tb.appendChild(tr);
   });
   t.appendChild(tb); tw.appendChild(t); app.appendChild(tw);
-  app.appendChild(el('p', 'n12', 'اضغط عنوان أي عمود لنشره في EduSpace أو إخفائه. «نشر» يخص صفحة الطالب في EduSpace فقط؛ ولـ Moodle استعمل «تصدير».'));
+  app.appendChild(el('p', 'n12', '«نشر» يُظهر الدرجات للطلاب في صفحتهم في EduSpace فقط؛ ولـ Moodle استعمل «تصدير».'));
+}
+/* «نشر» (0.14): every item in the order of the activities page. Not published: a box to tick (with «الكل»).
+   Published: the box ticked and off, the row faded, and «سحب» on the left takes it back (after a confirmation).
+   Applied at once when online, else at the next sync. */
+function openPublish(d) {
+  var pick = {}, n = Object.keys(d.students).length;
+  sheet('نشر الدرجات', function (b, h) {
+    function graded(it) { var g = d.grades[it.id] || {}; return Object.keys(g).filter(function (id) { return d.students[id] && g[id] != null; }).length; }
+    function draw2() {
+      b.textContent = '';
+      var open = d.items.filter(function (it) { return !it.published && !it.ro; });
+      var all = el('label', 'pb-row pb-all'), ac = el('input'); ac.type = 'checkbox';
+      ac.checked = open.length > 0 && open.every(function (it) { return pick[it.id]; }); ac.disabled = !open.length;
+      ac.onchange = function () { open.forEach(function (it) { if (ac.checked) pick[it.id] = 1; else delete pick[it.id]; }); draw2(); };
+      all.appendChild(ac); all.appendChild(el('span', 'sp', 'الكل')); b.appendChild(all);
+      d.items.forEach(function (it) {
+        var r = el('div', 'pb-row' + (it.published ? ' off' : '')), c = el('input'); c.type = 'checkbox';
+        c.checked = it.published || !!pick[it.id]; c.disabled = it.published || !!it.ro;
+        c.onchange = function () { if (c.checked) pick[it.id] = 1; else delete pick[it.id]; draw2(); };
+        r.appendChild(c);
+        var t = el('div', 'sp'); t.appendChild(el('b', '', it.code + ' · ' + it.title));
+        t.appendChild(el('div', 'n12', 'مصحَّح ' + graded(it) + ' من ' + n + (it.ro ? ' · للعرض فقط' : '')));
+        r.appendChild(t);
+        if (it.published) r.appendChild(el('span', 'tag ok', 'منشور'));
+        if (it.published && !it.ro) r.appendChild(btn('سحب', 'sec', function () {
+          if (!confirm('سحب نشر ' + it.code + '؟ يختفي التمرين ودرجاته عن الطلاب.')) return;
+          it.published = false; rec(R.key, 'pub', it.id, '', false, null, 'سحب نشر ' + it.code); change(); pubNow(); draw2();
+        }));
+        b.appendChild(r);
+      });
+    }
+    draw2();
+  }, [['نشر', '', function (h) {
+    var ids = Object.keys(pick); if (!ids.length) return say('اختر تمرينًا واحدًا على الأقل');
+    d.items.forEach(function (it) { if (pick[it.id]) { it.published = true; rec(R.key, 'pub', it.id, '', true, null, 'نشر ' + it.code); } });
+    change(); h.close(); draw(); pubNow(); say('نُشر ' + pl(ids.length, 'تمرين', 'تمارين') + (navigator.onLine && S.link && !S.demo ? '' : ' · يُرسل عند المزامنة'));
+  }]]);
+}
+function pubNow() {   /* the publishing goes now when it can (it is the student's page that changes) */
+  if (!S.link || S.demo || !navigator.onLine) return;
+  syncNow().then(function () { draw(); }, function () { /* stays in the outbox */ });
 }
 /* the grade distribution as EduSpace has it (read only here; it is edited in the panel) */
 function treeSheet(d) {

@@ -177,3 +177,11 @@ body.noscroll{overflow:hidden}
 .hlc{appearance:none;border:2px solid #fff;width:32px;height:32px;border-radius:50%;cursor:pointer;flex:none}
 .vlinks a{display:block;direction:ltr;text-align:right;font-size:16px;padding:6px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--fg)}
 .hlbar[hidden]{display:none}
+/* 0.14 — the queue's capsule */
+.qbar{position:fixed;z-index:70;left:16px;bottom:calc(16px + env(safe-area-inset-bottom));background:var(--fg);color:#fff;font-size:12px;padding:6px 14px;border-radius:999px;box-shadow:0 2px 10px rgba(0,0,0,.2);pointer-events:none}
+.qbar[hidden]{display:none}
+.pb-row{display:flex;align-items:center;gap:12px;padding:10px 0;border-bottom:1px solid var(--line)}
+.pb-row input[type=checkbox]{width:22px;height:22px;flex:none}
+.pb-row.off .sp{opacity:.5}
+.pb-row .sp{flex:1;min-width:0}
+.pb-all{font-weight:700}
