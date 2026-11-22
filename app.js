@@ -2,7 +2,7 @@
  * Everything is kept on the device (IndexedDB); every change is written to an outbox that the sync sends later.
  * Views: home (courses) · course: students | grades | submissions · sheets: sync, export, bulk, backup. */
 'use strict';
-var VERSION = '0.12.0';                 /* the system's version: the same number as the panel (handoff/backlog.md) */
+var VERSION = '0.13.0';                 /* the system's version: the same number as the panel (handoff/backlog.md) */
 var $ = function (s, r) { return (r || document).querySelector(s); };
 var ICON = {
   sync: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
@@ -207,7 +207,7 @@ function pull() {
       /* which subjects have feedback on the server (1 the file, 2 the voice note) */
       Object.keys(c.fbs || {}).forEach(function (code) {
         var t = data[c.key].st[code] = data[c.key].st[code] || { list: [], sent: {}, at: 0 }; t.sent = {};
-        Object.keys(c.fbs[code]).forEach(function (s) { var v = c.fbs[code][s]; t.sent[s] = { pdf: !!(v & 1), audio: !!(v & 2) }; });
+        Object.keys(c.fbs[code]).forEach(function (s) { var v = c.fbs[code][s]; t.sent[s] = { pdf: !!(v & 1), audio: !!(v & 2), hl: !!(v & 4), note: !!(v & 8) }; });
       });
     });
     var keep = S.demo ? [] : (S.outbox || []);

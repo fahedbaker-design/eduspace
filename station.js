@@ -1,10 +1,13 @@
-/* EduSpace offline — the grading station (0.12.0).
+/* EduSpace offline — the grading station (0.13.0: a submitted text is shown as text — selectable, copyable — and the
+   teacher highlights parts of it with a note on each (hl); links open; a written note for the whole submission;
+   Word / Excel / PowerPoint files are opened in their own apps. 0.12.0).
    The EduSpace submissions of one assignment come down to the iPad (Sync: files / file), the teacher writes on them
    with the Apple Pencil (a finger scrolls; «الرسم بالإصبع» lets a finger draw), may record a voice note, and sends
    back one annotated PDF and the voice note (Sync: fb). The student sees them on his page once the assignment's
    grades are published.
      IndexedDB  files  <file id>                  → { id, name, mime, size, blob, course, code, s, at }
-                marks  <course>|<code>|<subject>   → { ink: { <file id>: { <page>: [stroke] } }, audio, amime, sec, state, sentAt, err }
+                marks  <course>|<code>|<subject>   → { ink: { <file id>: { <page>: [stroke] } }, hl: [{ a, b, c, n }], note, audio, amime, sec, state, sentAt, err }
+     hl     = the highlights on the submitted text: from / to in the characters of its textContent, colour, note
      stroke = { t:'pen'|'hl', c:<colour>, w:<width, of the page width>, p:[x, y, pressure, …] (x, y of the page, 0..1) }
      state  = 'draft' (changed, not sent) | 'ready' (send at the next sync) | 'sent'
    pdf.js (vendor/pdfjs, Mozilla, Apache 2.0) draws the PDF pages; the annotated PDF is written here: each page as a
@@ -92,17 +95,21 @@ function drawStation(app, d) {
   if (!st.at) { busy(stList(R.key, it.id), 'تُجلب قائمة التسليمات…').then(draw).catch(function () {}); }
   Promise.all([onDevice(), fAll('marks')]).then(function (r) {
     var have = r[0], marks = {}; r[1].forEach(function (x) { marks[x.k] = x.v; });
-    var hr = el('tr'); ['الطالب', 'التسليم', 'الملفات', 'الحالة', 'الدرجة'].forEach(function (h) { hr.appendChild(el('th', '', h)); }); t.appendChild(hr);
+    var hr = el('tr'); ['الطالب', 'التسليم', 'ما سُلِّم', 'الحالة', 'الدرجة'].forEach(function (h) { hr.appendChild(el('th', '', h)); }); t.appendChild(hr);
     if (!st.list.length) { var e = el('tr'), td = el('td', 'n14', st.at ? 'لا تسليمات بعد.' : 'جارٍ التحميل…'); td.colSpan = 5; e.appendChild(td); t.appendChild(e); }
     st.list.slice().sort(function (a, b) { return subjName(d, a).localeCompare(subjName(d, b), 'ar'); }).forEach(function (row, i, all) {
       var tr = el('tr', 'link'), m = marks[mKey(R.key, it.id, row.s)], sent = st.sent[row.s];
       var nm = el('td'); nm.appendChild(el('div', '', subjName(d, row))); nm.appendChild(el('div', 'n12 ltr', row.s.indexOf('g:') ? row.s : '')); tr.appendChild(nm);
       var w = el('td', 'n14', when(row.atMs)); if (row.late) w.appendChild(el('span', 'tag warn', 'متأخر')); tr.appendChild(w);
-      var down = row.files.filter(function (f) { return have[f.id]; }).length, sz = row.files.reduce(function (a, f) { return a + (f.size || 0); }, 0);
-      tr.appendChild(el('td', 'n14', row.files.length + ' · ' + size(sz) + (down === row.files.length && down ? ' · على الجهاز' : down ? ' · ' + down + ' على الجهاز' : '')));
+      var down = row.files.filter(function (f) { return have[f.id]; }).length, sz = row.files.reduce(function (a, f) { return a + (f.size || 0); }, 0), what = [];
+      if (row.text) what.push('نص · ' + words(row.text) + ' كلمة');
+      if ((row.links || []).length) what.push(pl(row.links.length, 'رابط', 'روابط'));
+      if (row.files.length) what.push(pl(row.files.length, 'ملف', 'ملفات') + ' · ' + size(sz) + (down === row.files.length ? ' · على الجهاز' : down ? ' · ' + down + ' على الجهاز' : ''));
+      tr.appendChild(el('td', 'n14', what.join(' · ')));
       var s = el('td'), k = m && m.state === 'ready' ? ['جاهز للإرسال', 'warn'] : m && m.state === 'draft' ? ['مسودة', ''] : m && m.state === 'sent' || sent ? ['أُرسل', 'ok'] : null;
       if (k) s.appendChild(el('span', 'tag ' + k[1], k[0])); if (m && m.err) s.appendChild(el('span', 'tag bad', 'لم يُرسل'));
       if (m && m.audio || sent && sent.audio) s.appendChild(el('span', 'tag', 'صوت'));
+      if (m && m.hl && m.hl.length || sent && sent.hl) s.appendChild(el('span', 'tag', 'تظليل'));
       tr.appendChild(s);
       var g = (d.grades[it.id] || {})[row.sids[0]]; tr.appendChild(el('td', 'num', g == null ? '—' : fmt(g)));
       tr.onclick = function () { openViewer(R.key, it.id, all, i); };
@@ -111,6 +118,7 @@ function drawStation(app, d) {
   });
   app.appendChild(el('p', 'n12', 'اضغط الطالب لفتح تسليمه. اكتب بقلم Apple، ويحرّك الإصبع الصفحة. ما تكتبه يبقى على الجهاز حتى ترسله؛ ويراه الطالب بعد نشر درجات التكليف.'));
 }
+function words(html) { var d = document.createElement('div'); d.innerHTML = html; return (d.textContent || '').trim().split(/\s+/).filter(Boolean).length; }
 function busy(p, text) {
   if (text) say(text);
   return p.catch(function (e) { fail('محطة التصحيح', e); throw e; });
@@ -208,7 +216,7 @@ function openViewer(key, code, list, idx) {
   ov.appendChild(top); ov.appendChild(tools); ov.appendChild(pages); document.body.appendChild(ov); document.body.classList.add('noscroll');
   var V = VW = { key: key, code: code, row: row, m: null, tool: 'pen', color: PENS[0][0], finger: false, zoom: 1, undo: [], pages: [], closed: false };
   V.close = function (quiet) {
-    V.closed = true; stopRec(); save(); ov.remove(); document.body.classList.remove('noscroll'); VW = null;
+    V.closed = true; stopRec(); save(); if (V.offSel) V.offSel(); ov.remove(); document.body.classList.remove('noscroll'); VW = null;
     if (!quiet) draw();
   };
   /* top: back, who, previous / next, grade, send */
@@ -250,9 +258,20 @@ function openViewer(key, code, list, idx) {
   pages.addEventListener('touchmove', function (e) { var t = e.touches[0]; if (e.target.classList.contains('ink') && (V.finger || (t && t.touchType === 'stylus'))) e.preventDefault(); }, { passive: false });
 
   fGet('marks', mk).then(function (m) {
-    V.m = m || { ink: {}, audio: null, amime: '', sec: 0, state: '' };
+    V.m = m || { ink: {}, hl: [], note: '', audio: null, amime: '', sec: 0, state: '' };
+    V.m.hl = V.m.hl || []; V.m.note = V.m.note || '';
     drawAudio(V);
-    var any = false;
+    /* a written note for the whole submission */
+    var nw = el('div', 'vnote'), nl = el('label', 'n12', 'ملاحظة للطالب (يراها مع الدرجة)'), nt = el('textarea');
+    nt.dir = 'auto'; nt.rows = 2; nt.value = V.m.note; nt.oninput = function () { V.m.note = nt.value; dirty(V); };
+    nw.appendChild(nl); nw.appendChild(nt); pages.appendChild(nw);
+    if (row.text) textBlock(V, pages, row.text);
+    if ((row.links || []).length) {
+      var lw = el('div', 'vlinks'); lw.appendChild(el('div', 'n12', 'الروابط'));
+      row.links.forEach(function (u) { var a = el('a', '', u); a.href = u; a.target = '_blank'; a.rel = 'noopener noreferrer'; lw.appendChild(a); });
+      pages.appendChild(lw);
+    }
+    var any = !!(row.text || (row.links || []).length);
     return row.files.reduce(function (p, f) {
       return p.then(function () {
         if (V.closed) return;
@@ -263,7 +282,7 @@ function openViewer(key, code, list, idx) {
           .then(function (x) {
             hold.remove();
             if (!x.pp) {
-              var o = el('div', 'vother'); o.appendChild(el('p', 'n14', 'هذا النوع لا يُعرض هنا ولا يُكتب عليه. افتحه في تطبيق آخر.'));
+              var o = el('div', 'vother'); o.appendChild(el('p', 'n14', 'هذا الملف يُفتح في تطبيقه (Word أو Excel أو PowerPoint أو غيرها)، ولا يُكتب عليه هنا.'));
               o.appendChild(btn('فتح / مشاركة', 'sec', function () { share(x.r.blob, x.r.name); }, 'export')); pages.appendChild(o); return;
             }
             any = true;
@@ -276,6 +295,7 @@ function openViewer(key, code, list, idx) {
   function setZoom(z) { V.zoom = Math.max(0.5, Math.min(3, z)); V.pages.forEach(function (P) { sizePage(V, P); }); }
   function undo() {
     var u = V.undo.pop(); if (!u) return say('لا شيء للتراجع');
+    if (u.hl) { if (u.add) { var j = V.m.hl.indexOf(u.h); if (j > -1) V.m.hl.splice(j, 1); } else V.m.hl.splice(Math.min(u.at, V.m.hl.length), 0, u.h); dirty(V); if (V.paintText) V.paintText(); return; }
     var arr = pageInk(V, u.f, u.i);
     if (u.add) { var at = arr.indexOf(u.s); if (at > -1) arr.splice(at, 1); } else arr.splice(Math.min(u.at, arr.length), 0, u.s);
     dirty(V); V.pages.forEach(function (P) { if (P.f === u.f && P.i === u.i) P.redraw(); });
@@ -284,7 +304,69 @@ function openViewer(key, code, list, idx) {
   V.save = function () { clearTimeout(t); t = setTimeout(save, 400); };
   V.saveNow = function () { clearTimeout(t); V.m.changed = true; save(); };
 }
-function strip(m) { return { ink: m.ink, audio: m.audio, amime: m.amime, sec: m.sec, state: m.state, sentAt: m.sentAt || 0, err: m.err || '' }; }
+function strip(m) { return { ink: m.ink, hl: m.hl || [], note: m.note || '', audio: m.audio, amime: m.amime, sec: m.sec, state: m.state, sentAt: m.sentAt || 0, err: m.err || '' }; }
+
+/* ===================== the submitted text: read only, highlighted ===================== */
+var HL_COLORS = [['#fde047', 'أصفر'], ['#86efac', 'أخضر'], ['#f9a8d4', 'وردي']];
+function markText(root, hl, onTap) {
+  function nodes() { var out = [], w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT), n, pos = 0; while ((n = w.nextNode())) { out.push({ n: n, a: pos, b: pos + n.data.length }); pos += n.data.length; } return out; }
+  hl.map(function (h, k) { return { h: h, k: k }; }).sort(function (x, y) { return y.h.a - x.h.a; }).forEach(function (x) {
+    var ns = nodes();
+    for (var i = ns.length - 1; i >= 0; i--) {
+      var t = ns[i], s0 = Math.max(x.h.a, t.a), e0 = Math.min(x.h.b, t.b);
+      if (s0 >= e0) continue;
+      var r = document.createRange(); r.setStart(t.n, s0 - t.a); r.setEnd(t.n, e0 - t.a);
+      var m = document.createElement('mark'); m.style.background = x.h.c + '99'; m.dataset.k = x.k; if (x.h.n) m.className = 'has-n';
+      m.onclick = function (e) { e.stopPropagation(); onTap && onTap(+this.dataset.k); };
+      try { r.surroundContents(m); } catch (e) { /* crosses a tag */ }
+    }
+  });
+}
+function offsetIn(root, node, off) { var r = document.createRange(); r.setStart(root, 0); r.setEnd(node, off); return r.toString().length; }
+function textBlock(V, host, html) {
+  var card = el('div', 'vtextw'), tx = el('div', 'vtext'), bar = el('div', 'hlbar'), ed = el('div', 'hled');
+  card.appendChild(el('div', 'n12', 'النص · ' + words(html) + ' كلمة · حدّد جملة لتظليلها، والمس الجملة المظلَّلة لتكتب ملاحظتك'));
+  card.appendChild(tx); card.appendChild(ed); host.appendChild(card); document.body.appendChild(bar); bar.hidden = true;
+  V.hlbar = bar;
+  function paint() { tx.innerHTML = html; tx.dir = 'auto'; markText(tx, V.m.hl, open); }
+  function open(k) {
+    var h = V.m.hl[k]; ed.textContent = ''; if (!h) return;
+    ed.appendChild(el('div', 'n12', '«' + (tx.textContent || '').slice(h.a, h.b).slice(0, 80) + ((h.b - h.a) > 80 ? '…' : '') + '»'));
+    var ta = el('textarea'); ta.dir = 'auto'; ta.rows = 2; ta.placeholder = 'ملاحظتك على هذه الجملة'; ta.value = h.n || '';
+    ta.oninput = function () { h.n = ta.value; dirty(V); }; ta.onblur = function () { paint(); };
+    ed.appendChild(ta);
+    var row = el('div', 'row'); row.style.gap = '8px';
+    HL_COLORS.forEach(function (c) { var b = el('button', 'hlc'); b.type = 'button'; b.title = c[1]; b.style.background = c[0]; b.onclick = function () { h.c = c[0]; dirty(V); paint(); }; row.appendChild(b); });
+    row.appendChild(el('span', 'sp'));
+    row.appendChild(btn('إزالة التظليل', 'sec', function () { V.m.hl.splice(k, 1); V.undo.push({ hl: true, h: h, at: k }); dirty(V); ed.textContent = ''; paint(); }, 'del'));
+    ed.appendChild(row); setTimeout(function () { ta.focus(); }, 30);
+  }
+  V.paintText = paint;
+  paint();
+  /* a selection inside the text → the colours appear above it */
+  function sel() {
+    var s = window.getSelection();
+    if (!s || s.isCollapsed || !s.rangeCount || !tx.contains(s.anchorNode) || !tx.contains(s.focusNode)) { bar.hidden = true; return; }
+    var r = s.getRangeAt(0).getBoundingClientRect();
+    bar.hidden = false; bar.style.top = Math.max(8, r.top - 52) + 'px'; bar.style.left = Math.max(8, Math.min(window.innerWidth - 180, r.left + r.width / 2 - 80)) + 'px';
+  }
+  document.addEventListener('selectionchange', sel);
+  V.offSel = function () { document.removeEventListener('selectionchange', sel); bar.remove(); };
+  HL_COLORS.forEach(function (c) {
+    var b = el('button', 'hlc'); b.type = 'button'; b.title = 'ظلّل ' + c[1]; b.style.background = c[0];
+    b.onmousedown = function (e) { e.preventDefault(); };
+    b.onclick = function () {
+      var s = window.getSelection(); if (!s.rangeCount) return;
+      var r = s.getRangeAt(0), a = offsetIn(tx, r.startContainer, r.startOffset), z = offsetIn(tx, r.endContainer, r.endOffset);
+      if (z <= a) return;
+      var h = { a: a, b: z, c: c[0], n: '' };
+      V.m.hl = V.m.hl.filter(function (x) { return x.b <= a || x.a >= z; });   /* a new highlight replaces what it covers */
+      V.m.hl.push(h); V.undo.push({ hl: true, add: true, h: h });
+      s.removeAllRanges(); bar.hidden = true; dirty(V); paint(); open(V.m.hl.indexOf(h));
+    };
+    bar.appendChild(b);
+  });
+}
 function pageInk(V, f, i) { var a = V.m.ink[f] = V.m.ink[f] || {}; return a[i] = a[i] || []; }
 function dirty(V) { V.m.state = 'draft'; V.m.err = ''; V.m.changed = true; V.save(); }
 function addPage(V, host, f, i, pg) {
@@ -428,18 +510,22 @@ function annotated(key, code, row, m) {
 
 /* ===================== sending ===================== */
 function sendFeedback(key, code, row, m) {
+  var pdfSent = false;
   return annotated(key, code, row, m).then(function (pdf) {
-    if (!pdf && !m.audio && !m.dropAudio) throw new Error('لا شيء للإرسال: لم تكتب على الملف ولم تسجّل ملاحظة');
+    pdfSent = !!pdf;
+    if (!pdf && !m.audio && !m.dropAudio && !(m.hl || []).length && !(m.note || '').trim() && !m.sentAt) throw new Error('لا شيء للإرسال: لم تكتب ولم تظلّل ولم تسجّل ملاحظة');
     return Promise.all([pdf ? pdf.arrayBuffer() : null, m.audio ? m.audio.arrayBuffer() : null]).then(function (b) {
       var body = { c: key, i: code, s: row.s };
       if (b[0]) body.pdf = b64of(b[0]);
       if (b[1]) { body.audio = b64of(b[1]); body.amime = m.amime || m.audio.type; body.sec = m.sec || 0; }
       if (!b[1] && m.dropAudio) body.drop = ['audio'];
+      body.hl = m.hl || []; body.note = m.note || '';
       return api(S.link, 'fb', body);
     });
   }).then(function () {
     m.state = 'sent'; m.sentAt = Date.now(); m.err = ''; delete m.dropAudio;
-    var st = stOf(S.data[key], code); st.sent[row.s] = { pdf: true, audio: !!m.audio, sec: m.sec || 0 };
+    var st = stOf(S.data[key], code), was = st.sent[row.s] || {};
+    st.sent[row.s] = { pdf: !!(was.pdf || pdfSent), audio: !!m.audio, sec: m.sec || 0, hl: (m.hl || []).length, note: !!(m.note || '').trim() };
     persist();
     return fPut('marks', mKey(key, code, row.s), strip(m));
   });

@@ -167,3 +167,13 @@ body.noscroll{overflow:hidden}
 .vload{padding:32px;color:var(--mute)}
 .vload.err{color:var(--bad)}
 .vother{background:var(--card);border-radius:28px;padding:24px;text-align:center}
+/* 0.13 — the submitted text, links, notes */
+.vnote,.vtextw,.vlinks{width:100%;max-width:980px;background:var(--card);border-radius:18px;padding:12px 16px;flex:none}
+.vnote textarea,.hled textarea{width:100%;border:1px solid var(--line);border-radius:12px;padding:8px 12px;font:inherit;font-size:16px;background:var(--ground);resize:vertical}
+.vtext{background:#fff;border-radius:12px;padding:16px;margin-top:8px;font-size:18px;line-height:1.9;white-space:pre-wrap;-webkit-user-select:text;user-select:text;cursor:text}
+.vtext mark{color:inherit;border-radius:3px;cursor:pointer}.vtext mark.has-n{box-shadow:inset 0 -2px 0 rgba(0,0,0,.4)}
+.hled:not(:empty){margin-top:8px;display:flex;flex-direction:column;gap:8px}
+.hlbar{position:fixed;z-index:60;display:flex;gap:8px;padding:8px;background:var(--fg);border-radius:999px;box-shadow:0 4px 16px rgba(0,0,0,.25)}
+.hlc{appearance:none;border:2px solid #fff;width:32px;height:32px;border-radius:50%;cursor:pointer;flex:none}
+.vlinks a{display:block;direction:ltr;text-align:right;font-size:16px;padding:6px 0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--fg)}
+.hlbar[hidden]{display:none}
