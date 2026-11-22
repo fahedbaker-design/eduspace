@@ -19,6 +19,10 @@ var ICON = {
   list: '<path d="M8 6h13"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M3 6h.01"/><path d="M3 12h.01"/><path d="M3 18h.01"/>',
   eye: '<path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/>',
   link: '<path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>',
+  grip: '<circle cx="9" cy="8" r="1"/><circle cx="15" cy="8" r="1"/><circle cx="9" cy="16" r="1"/><circle cx="15" cy="16" r="1"/>',
+  note: '<path d="M4 6h16"/><path d="M4 12h10"/><path d="M4 18h7"/>',
+  fit: '<path d="M8 3H5a2 2 0 0 0-2 2v3"/><path d="M21 8V5a2 2 0 0 0-2-2h-3"/><path d="M3 16v3a2 2 0 0 0 2 2h3"/><path d="M16 21h3a2 2 0 0 0 2-2v-3"/>',
+  fitw: '<path d="M3 12h18"/><path d="m7 8-4 4 4 4"/><path d="m17 8 4 4-4 4"/>',
   eyeoff: '<path d="M10.7 5.1A10.7 10.7 0 0 1 22 12a13 13 0 0 1-1.7 2.7"/><path d="M14.1 14.2a3 3 0 0 1-4.2-4.2"/><path d="M17.5 17.5A10.8 10.8 0 0 1 2 12a13.2 13.2 0 0 1 4.5-5.5"/><path d="m2 2 20 20"/>',
   pen: '<path d="M12 20h9"/><path d="M16.38 3.62a1 1 0 0 1 3 3L7.37 18.64a2 2 0 0 1-.86.5l-2.87.84a.5.5 0 0 1-.62-.62l.84-2.87a2 2 0 0 1 .5-.86z"/>',
   hl: '<path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/>',
@@ -230,10 +234,12 @@ function pull() {
   });
 }
 /* send the outbox, then download; returns { sent, conflicts, errors } */
+/* how long it took, shown after every sync (0.16): «3.2 ث» */
+function secs(ms) { return (Math.round((ms || 0) / 100) / 10) + ' ث'; }
 function syncNow() {
   if (!S.link || S.demo) return Promise.reject(new Error('اربط الجهاز أولًا'));
   if (!navigator.onLine) return Promise.reject(new Error('لا إنترنت الآن. التغييرات محفوظة وستُرسل عند الاتصال.'));
-  var send = S.outbox.filter(function (o) { return !o.cf; }), sum = { sent: 0, conflicts: 0, errors: 0 };
+  var send = S.outbox.filter(function (o) { return !o.cf; }), sum = { sent: 0, conflicts: 0, errors: 0 }, t0 = Date.now();
   var p = send.length ? api(S.link, 'push', { changes: send.map(function (o) { return { n: o.n, k: o.k, c: o.course, i: o.i, s: o.s, v: o.v, w: o.w, f: !!o.f }; }) })
     : Promise.resolve({ results: [] });
   return p.then(function (res) {
@@ -247,7 +253,7 @@ function syncNow() {
     });
     persist();
     return sendReady().then(function (n) { sum.fb = n; }, function () { /* tried again at the next sync */ });
-  }).then(function () { return pull(); }).then(function () { stAfterSync(); return sum; });
+  }).then(function () { return pull(); }).then(function () { stAfterSync(); sum.ms = Date.now() - t0; sum.server = S.lastMs || 0; return sum; });
 }
 function openLink() {
   sheet('الربط بـ EduSpace', function (b) {
@@ -262,7 +268,7 @@ function openLink() {
     f.appendChild(t); b.appendChild(f);
   }, S.link ? [['مزامنة الآن', '', function (h) {
     h.body.appendChild(el('p', 'n14', 'جارٍ المزامنة…'));
-    (S.demo ? pull() : syncNow()).then(function () { h.close(); go('home'); say('تمت المزامنة مع EduSpace.'); })
+    (S.demo ? pull() : syncNow()).then(function (x) { h.close(); go('home'); say('تمت المزامنة مع EduSpace' + (x && x.ms ? ' · ' + secs(x.ms) + (x.server ? ' (اللوحة ' + secs(x.server) + ')' : '') : '') + '.'); })
       .catch(function (e) { h.close(); fail('تعذّر التنزيل', e); });
   }, 'import'], ['إلغاء الربط', 'sec', function (h) {
     if (!confirm('إلغاء ربط هذا الجهاز؟ تبقى البيانات النازلة عليه، ولا يتصل بعدها حتى تربطه بكود جديد.')) return;
@@ -313,7 +319,7 @@ function openSync() {
       syncNow().then(function (x) {
         h.close(); draw();
         say((x.sent ? 'أُرسل ' + pl(x.sent, 'تغيير', 'تغييرات') + ' وحُدّثت البيانات' : 'حُدّثت البيانات من EduSpace') +
-          (x.conflicts ? ' · ' + pl(x.conflicts, 'تعارض', 'تعارضات') + ': افتح المزامنة لتقرر' : '') + (x.errors ? ' · لم يُرسل ' + x.errors : '') + (x.fb ? ' · يُرسل في الخلفية ' + pl(x.fb, 'تصحيح', 'تصحيحات') : '') + '.');
+          (x.conflicts ? ' · ' + pl(x.conflicts, 'تعارض', 'تعارضات') + ': افتح المزامنة لتقرر' : '') + (x.errors ? ' · لم يُرسل ' + x.errors : '') + (x.fb ? ' · يُرسل في الخلفية ' + pl(x.fb, 'تصحيح', 'تصحيحات') : '') + ' · ' + secs(x.ms) + (x.server ? ' (اللوحة ' + secs(x.server) + ')' : '') + '.');
         if (x.conflicts) openSync();
       }).catch(function (e) { h.close(); fail('تعذّرت المزامنة', e); });
       return;
@@ -811,3 +817,35 @@ kvGet('state').then(function (s) { S = (s && s.v >= 2) ? s : demo(); if (S !== s
     e.preventDefault();
   });
 })();
+/* 0.16: keys for the whole app, only when no field has the cursor: «/» search, Alt+N (⌥N) add, «?» the list of keys.
+   Esc closes a pop-up; ← → and ↑ ↓ move between students and assignments where there is a next one. */
+(function () {
+  var KEYS = [['/', 'البحث'], ['Alt + N', 'إضافة (حيث يوجد زر «إضافة»)'], ['Esc', 'إغلاق النافذة'], ['← →', 'الطالب التالي والسابق في التصحيح'], ['↑ ↓', 'التمرين التالي والسابق للطالب نفسه (الآيباد)'], ['Enter', 'حفظ الدرجة والنزول إلى التالي'], ['Ctrl/⌘ + B, I, U', 'عريض، مائل، تسطير في المحرر'], ['?', 'هذه القائمة']];
+  function seen(e) { return e && e.offsetParent !== null; }
+  function typing(t) { return t && (/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable); }
+  function showKeys() {
+    var old = document.getElementById('kbd-help'); if (old) { old.remove(); return; }
+    var w = document.createElement('div'); w.id = 'kbd-help';
+    w.style.cssText = 'position:fixed;inset:0;z-index:999;background:rgba(0,0,0,.3);display:flex;align-items:center;justify-content:center';
+    var b = document.createElement('div'); b.style.cssText = 'background:#fff;border-radius:24px;padding:20px 24px;min-width:320px;max-width:90vw;font-size:14px;box-shadow:0 10px 40px rgba(0,0,0,.25)';
+    var h = document.createElement('b'); h.textContent = 'اختصارات لوحة المفاتيح'; h.style.cssText = 'display:block;font-size:18px;margin-bottom:12px'; b.appendChild(h);
+    KEYS.forEach(function (k) {
+      var r = document.createElement('div'); r.style.cssText = 'display:flex;justify-content:space-between;gap:24px;padding:6px 0;border-top:1px solid #eee';
+      var a = document.createElement('span'); a.textContent = k[1]; var c = document.createElement('code'); c.textContent = k[0]; c.dir = 'ltr'; c.style.cssText = 'background:#f1f2f6;border-radius:6px;padding:0 8px';
+      r.appendChild(a); r.appendChild(c); b.appendChild(r);
+    });
+    w.appendChild(b); w.onclick = function () { w.remove(); }; document.body.appendChild(w);
+  }
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape') { var hp = document.getElementById('kbd-help'); if (hp) { hp.remove(); return; } }
+    if (typing(e.target) || e.ctrlKey || e.metaKey) return;
+    if (e.key === '/') {
+      var q = [].filter.call(document.querySelectorAll('input[type=search]'), seen)[0];
+      if (q) { e.preventDefault(); q.focus(); q.select(); }
+    } else if (e.altKey && e.code === 'KeyN') {
+      var add = [].filter.call(document.querySelectorAll('button'), function (b) { return seen(b) && !b.disabled && /^\s*(إضافة|جديد|إضافة مساق|مساق جديد)\s*$/.test(b.textContent); })[0];
+      if (add) { e.preventDefault(); add.click(); }
+    } else if (e.key === '?') { e.preventDefault(); showKeys(); }
+  });
+})();
+document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && !VW) { var o = document.querySelector('.ov'); if (o) o.remove(); } });

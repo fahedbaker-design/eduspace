@@ -1,4 +1,5 @@
-/* EduSpace offline — the grading station (0.14.0: a background queue — files come down a few at a time and the
+/* EduSpace offline — the grading station (0.16.0: the grading page of proto_station_v1 — the work fills the screen, a
+   floating capsule of tools, one bar at the bottom, students and assignments ‹ ›, pinch to zoom, fit screen / width. 0.14.0: a background queue — files come down a few at a time and the
    student opened jumps the queue; «إرسال» sends in the background; lighter annotated pages. 0.13.0: a submitted text is shown as text — selectable, copyable — and the
    teacher highlights parts of it with a note on each (hl); links open; a written note for the whole submission;
    Word / Excel / PowerPoint files are opened in their own apps. 0.12.0).
@@ -294,24 +295,46 @@ function hits(s, x, y, r) { for (var i = 0; i < s.p.length; i += 3) { var dx = s
 /* ===================== the viewer ===================== */
 var VW = null;
 var PENS = [['#d92d20', 'أحمر'], ['#1d4ed8', 'أزرق'], ['#1d1e24', 'أسود'], ['#16a34a', 'أخضر']];
+/* ===================== the grading page (0.16, proto_station_v1) =====================
+   The work fills the screen; the only thing that moves is the work. The tools are a floating capsule the teacher
+   drags anywhere (a double tap on its grip folds it); everything else is one bar at the bottom (the iPad's status bar
+   covers the top). Students ‹ › within the assignment, assignments ‹ › for the same student. */
+function capPos() { try { return JSON.parse(localStorage.getItem('es_cap') || 'null') || { x: 16, y: 16, min: false }; } catch (e) { return { x: 16, y: 16, min: false }; } }
+function capKeep(c) { try { localStorage.setItem('es_cap', JSON.stringify(c)); } catch (e) { /* private mode */ } }
+function sortedList(d, code) { return stOf(d, code).list.slice().sort(function (a, b) { return subjName(d, a).localeCompare(subjName(d, b), 'ar'); }); }
 function openViewer(key, code, list, idx) {
+  var keepZoom = VW ? { zoom: VW.zoom, fit: VW.fit } : null;
   if (VW) VW.close(true);
   var d = S.data[key], it = d.items.filter(function (x) { return x.id === code; })[0], row = list[idx], mk = mKey(key, code, row.s);
-  var ov = el('div', 'vw'), top = el('div', 'vbar'), tools = el('div', 'vtools'), pages = el('div', 'vpages');
-  ov.appendChild(top); ov.appendChild(tools); ov.appendChild(pages); document.body.appendChild(ov); document.body.classList.add('noscroll');
-  var V = VW = { key: key, code: code, row: row, m: null, tool: 'pen', color: PENS[0][0], finger: false, zoom: 1, undo: [], pages: [], closed: false };
+  var ov = el('div', 'vw2'), pages = el('div', 'vpages2'), cap = el('div', 'cap'), bar = el('div', 'vbar2'), pill = el('div', 'vpill'), pop = el('div', 'vpop');
+  pop.hidden = true;
+  ov.appendChild(pages); ov.appendChild(pill); ov.appendChild(cap); ov.appendChild(pop); ov.appendChild(bar);
+  document.body.appendChild(ov); document.body.classList.add('noscroll');
+  var V = VW = { key: key, code: code, row: row, list: list, idx: idx, m: null, tool: 'pen', color: PENS[0][0], finger: false,
+    zoom: keepZoom ? keepZoom.zoom : 1, fit: keepZoom ? keepZoom.fit : 'w', undo: [], pages: [], closed: false, host: pages };
+  V.baseW = function () { return Math.max(300, pages.clientWidth - 32); };
   V.close = function (quiet) {
-    V.closed = true; stopRec(); save(); if (V.offSel) V.offSel(); ov.remove(); document.body.classList.remove('noscroll'); VW = null;
+    V.closed = true; stopRec(); save(); if (V.offSel) V.offSel(); document.removeEventListener('keydown', keys); ov.remove(); document.body.classList.remove('noscroll'); VW = null;
     if (!quiet) draw();
   };
-  /* top: back, who, previous / next, grade, send */
-  top.appendChild(ico('x', 'إغلاق', function () { V.close(); }));
-  var who = el('div', 'who'); who.appendChild(el('b', '', subjName(d, row))); who.appendChild(el('span', 'n12', it.code + ' · ' + it.title + ' · ' + when(row.atMs) + (row.late ? ' · متأخر' : ''))); top.appendChild(who);
-  var prev = ico('back', 'السابق', function () { openViewer(key, code, list, idx - 1); }); prev.disabled = idx <= 0; top.appendChild(prev);
-  var nxt = ico('back', 'التالي', function () { openViewer(key, code, list, idx + 1); }); nxt.classList.add('flip'); nxt.disabled = idx >= list.length - 1; top.appendChild(nxt);
-  var gw = el('label', 'vg');      /* 0.15: «[ 8 ] \ 10» */
-  var gi = el('input', 'cell'); gi.inputMode = 'decimal'; gi.value = fmt((d.grades[code] || {})[row.sids[0]]); gi.setAttribute('aria-label', 'الدرجة من ' + it.max);
-  gw.appendChild(gi); gw.appendChild(el('span', 'gmax', '\\ ' + fmt(it.max))); top.appendChild(gw);
+  function go(i) { if (i >= 0 && i < list.length) { V.saveNow(); openViewer(key, code, list, i); } }
+  /* ----- the bottom bar ----- */
+  function nav(label, name, prev, next, open, pDis, nDis) {
+    var w = el('div', 'nav2'), p = el('button', 'a'); p.type = 'button'; p.innerHTML = svg('back'); p.title = 'السابق'; p.disabled = pDis; p.onclick = prev;
+    var pk = el('button', 'pick'); pk.type = 'button'; pk.appendChild(el('span', 'lab', label)); pk.appendChild(el('b', '', name)); pk.onclick = open;
+    var n = el('button', 'a flip'); n.type = 'button'; n.innerHTML = svg('back'); n.title = 'التالي'; n.disabled = nDis; n.onclick = next;
+    w.appendChild(p); w.appendChild(pk); w.appendChild(n); return w;
+  }
+  bar.appendChild(ico('x', 'إغلاق', function () { V.close(); }));
+  bar.appendChild(nav(d.students[row.sids[0]] || row.s.indexOf('g:') === 0 ? '' : '', subjName(d, row), function () { go(idx - 1); }, function () { go(idx + 1); }, function (e) { pickStudent(e.currentTarget); }, idx <= 0, idx >= list.length - 1));
+  var items = stItems(d), at = items.map(function (x) { return x.id; }).indexOf(code);
+  bar.appendChild(nav('', it.code, function () { goEx(at - 1); }, function () { goEx(at + 1); }, function (e) { pickEx(e.currentTarget); }, at <= 0, at >= items.length - 1));
+  bar.appendChild(el('span', 'tag' + (row.late ? ' warn' : ' ok'), row.late ? 'متأخر' : 'في الموعد'));
+  var stt = el('span', 'tag'); bar.appendChild(stt);
+  V.state = function () { var x = V.m && V.m.state; stt.textContent = x === 'sent' ? 'أُرسل' : x === 'ready' ? 'يُرسل' : x === 'draft' ? 'مسودة' : ''; stt.hidden = !stt.textContent; stt.className = 'tag' + (x === 'sent' ? ' ok' : ''); };
+  bar.appendChild(el('span', 'sp'));
+  var gw = el('label', 'vg'), gi = el('input', 'cell'); gi.inputMode = 'decimal'; gi.value = fmt((d.grades[code] || {})[row.sids[0]]); gi.setAttribute('aria-label', 'الدرجة من ' + it.max);
+  gw.appendChild(gi); gw.appendChild(el('span', 'gmax', '\\ ' + fmt(it.max))); bar.appendChild(gw);
   if (it.ro || !may(d, 'grade')) { gi.readOnly = true; gi.title = 'للعرض فقط على هذا الجهاز'; }
   gi.onchange = function () {
     var v = num(gi.value), g = (d.grades[code] = d.grades[code] || {});
@@ -323,25 +346,135 @@ function openViewer(key, code, list, idx) {
     change(); say('حُفظت الدرجة على الجهاز');
   };
   gi.onkeydown = function (e) { if (e.key === 'Enter') { e.preventDefault(); gi.blur(); } };
-  var sendB = btn('إرسال', '', function () { sendOne(V); }, 'export'); top.appendChild(sendB);
-  V.sendB = sendB;
-  /* tools */
-  function tb(k, label, html, fn) { var b = el('button', 'tl'); b.type = 'button'; b.innerHTML = html; b.title = label; b.setAttribute('aria-label', label); b.onclick = fn; b.dataset.k = k; tools.appendChild(b); return b; }
-  function mark() { [].forEach.call(tools.querySelectorAll('.tl'), function (b) { b.classList.toggle('on', b.dataset.k === V.tool || b.dataset.k === 'c' + V.color && V.tool !== 'eraser' || b.dataset.k === 'finger' && V.finger); }); }
-  tb('pen', 'قلم', svg('pen'), function () { V.tool = 'pen'; mark(); });
-  tb('hl', 'تظليل', svg('hl'), function () { V.tool = 'hl'; mark(); });
-  tb('eraser', 'ممحاة', svg('eraser'), function () { V.tool = 'eraser'; mark(); });
-  PENS.forEach(function (p) { var b = tb('c' + p[0], p[1], '<i style="background:' + p[0] + '"></i>', function () { V.color = p[0]; if (V.tool === 'eraser') V.tool = 'pen'; mark(); }); b.classList.add('dotb'); });
-  tb('undo', 'تراجع', svg('undo'), function () { undo(); });
-  tb('finger', 'الرسم بالإصبع', svg('hand'), function () { V.finger = !V.finger; mark(); say(V.finger ? 'الإصبع يرسم الآن' : 'الإصبع يحرّك الصفحة'); });
-  tb('zout', 'تصغير', svg('minus'), function () { setZoom(V.zoom / 1.25); });
-  tb('zin', 'تكبير', svg('plus'), function () { setZoom(V.zoom * 1.25); });
-  tools.appendChild(el('span', 'sp'));
-  var au = el('div', 'vau'); tools.appendChild(au); V.au = au;
-  mark();
-  /* the pencil writes, the finger scrolls (unless «الرسم بالإصبع») */
-  pages.addEventListener('touchstart', function (e) { var t = e.touches[0]; if (e.target.classList.contains('ink') && (V.finger || (t && t.touchType === 'stylus'))) e.preventDefault(); }, { passive: false });
-  pages.addEventListener('touchmove', function (e) { var t = e.touches[0]; if (e.target.classList.contains('ink') && (V.finger || (t && t.touchType === 'stylus'))) e.preventDefault(); }, { passive: false });
+  var sendB = btn('إرسال', '', function () { gi.blur(); sendOne(V); if (idx < list.length - 1) setTimeout(function () { go(idx + 1); }, 500); });
+  sendB.title = 'يُرسل في الخلفية وينتقل إلى التالي'; bar.appendChild(sendB); V.sendB = sendB;
+  /* ----- students and assignments ----- */
+  function popAt(anchor, build) {
+    var old = document.querySelector('.vlist'); if (old) { old.remove(); if (old.anchor === anchor) return; }
+    var p = el('div', 'vlist'); p.anchor = anchor; build(p);
+    var r = anchor.getBoundingClientRect(); p.style.right = Math.max(8, innerWidth - r.right) + 'px'; ov.appendChild(p);
+    setTimeout(function () { document.addEventListener('pointerdown', function h(e) { if (!p.contains(e.target) && e.target !== anchor && !anchor.contains(e.target)) { p.remove(); document.removeEventListener('pointerdown', h); } }); }, 0);
+  }
+  function pickStudent(a) {
+    popAt(a, function (p) {
+      p.appendChild(el('h4', '', it.code + ' · ' + it.title));
+      Promise.all([fAll('marks')]).then(function (r) {
+        var marks = {}; r[0].forEach(function (x) { marks[x.k] = x.v; });
+        list.forEach(function (rw, i) {
+          var m = marks[mKey(key, code, rw.s)], sent = stOf(d, code).sent[rw.s];
+          var o = el('div', 'row' + (i === idx ? ' cur' : '')), n = el('div', 'nm'); n.appendChild(el('b', '', subjName(d, rw))); n.appendChild(el('small', '', when(rw.atMs) + (rw.late ? ' · متأخر' : ''))); o.appendChild(n);
+          if (m && m.state === 'draft') o.appendChild(el('span', 'tag', 'مسودة')); else if (m && m.state === 'sent' || sent) o.appendChild(el('span', 'tag ok', 'أُرسل'));
+          o.appendChild(scoreEl((d.grades[code] || {})[rw.sids[0]], it.max));
+          o.onclick = function () { p.remove(); go(i); }; p.appendChild(o);
+        });
+      });
+    });
+  }
+  var sid = row.sids[0];
+  function rowFor(c) { return sortedList(d, c).filter(function (r) { return r.sids.indexOf(sid) > -1; })[0]; }
+  function openEx(c) {
+    var st = stOf(d, c);
+    (st.at ? Promise.resolve() : stList(key, c).then(function () { stQueueAll(key, c); })).then(function () {
+      var l2 = sortedList(d, c), r2 = l2.filter(function (r) { return r.sids.indexOf(sid) > -1; })[0];
+      if (!r2) return say((d.students[sid] || {}).name + ' لم يسلّم ' + c);
+      V.saveNow(); openViewer(key, c, l2, l2.indexOf(r2));
+    }).catch(function (e) { fail('التمارين', e); });
+  }
+  function goEx(i) { if (i >= 0 && i < items.length) openEx(items[i].id); }
+  function pickEx(a) {
+    popAt(a, function (p) {
+      p.appendChild(el('h4', '', subjName(d, row) + ' — تمارينه'));
+      items.forEach(function (x) {
+        var st = stOf(d, x.id), r2 = st.at ? rowFor(x.id) : null;
+        var o = el('div', 'row' + (x.id === code ? ' cur' : '')), n = el('div', 'nm'); n.appendChild(el('b', '', x.code + ' · ' + x.title));
+        n.appendChild(el('small', '', !st.at ? 'اضغط لجلب التسليمات' : !r2 ? 'لم يسلّم' : when(r2.atMs) + (r2.late ? ' · متأخر' : ' · في الموعد'))); o.appendChild(n);
+        o.appendChild(scoreEl((d.grades[x.id] || {})[sid], x.max));
+        o.onclick = function () { p.remove(); if (x.id !== code) openEx(x.id); }; p.appendChild(o);
+      });
+    });
+  }
+  /* ----- the capsule ----- */
+  var CP = capPos();
+  function drawCap() {
+    cap.textContent = ''; cap.classList.toggle('min', !!CP.min);
+    var g = el('div', 'grip'); g.innerHTML = svg('grip'); g.title = 'اسحب لتغيير المكان · نقرتان للطي'; cap.appendChild(g);
+    function t(k, label, fn, on, html, host) { var b = el('button', 't' + (on ? ' on' : '')); b.type = 'button'; b.innerHTML = html || svg(k); b.title = label; b.setAttribute('aria-label', label); b.onclick = fn; (host || cap).appendChild(b); return b; }
+    t('pen', 'قلم', function () { V.tool = 'pen'; drawCap(); }, V.tool === 'pen');
+    t('hl', 'تظليل', function () { V.tool = 'hl'; drawCap(); }, V.tool === 'hl');
+    t('eraser', 'ممحاة', function () { V.tool = 'eraser'; drawCap(); }, V.tool === 'eraser');
+    cap.appendChild(el('div', 'sep'));
+    var cols = el('div', 'cols'); cap.appendChild(cols);
+    PENS.forEach(function (pp) { t('', pp[1], function () { V.color = pp[0]; if (V.tool === 'eraser') V.tool = 'pen'; drawCap(); }, V.color === pp[0] && V.tool === 'pen', '<i class="dot" style="background:' + pp[0] + '"></i>', cols); });
+    cap.appendChild(el('div', 'sep'));
+    t('undo', 'تراجع', function () { undo(); });
+    t('hand', 'الإصبع يرسم', function () { V.finger = !V.finger; drawCap(); say(V.finger ? 'الإصبع يرسم الآن' : 'الإصبع يحرّك الصفحة'); }, V.finger);
+    t('fit', 'ملء الشاشة', function () { fitTo('s'); }, V.fit === 's');
+    t('fitw', 'ملء العرض', function () { fitTo('w'); }, V.fit === 'w');
+    cap.appendChild(el('div', 'sep'));
+    var mic = t('mic', V.rec ? 'إيقاف التسجيل' : 'صوت', function () { if (V.rec) stopRec(); else startRec(V); }, false); if (V.rec) mic.classList.add('rec');
+    t('note', 'ملاحظة', function () { togglePop(); }, !pop.hidden);
+    cap.style.left = CP.x + 'px'; cap.style.top = CP.y + 'px';
+    var drag = null, lt = 0;
+    g.onpointerdown = function (e) { e.preventDefault(); g.setPointerCapture(e.pointerId); drag = { x: e.clientX - CP.x, y: e.clientY - CP.y };
+      var n = Date.now(); if (n - lt < 300) { CP.min = !CP.min; capKeep(CP); drawCap(); drag = null; } lt = n; };
+    g.onpointermove = function (e) { if (!drag) return; CP.x = Math.max(8, Math.min(innerWidth - cap.offsetWidth - 8, e.clientX - drag.x)); CP.y = Math.max(8, Math.min(innerHeight - 72 - cap.offsetHeight, e.clientY - drag.y)); cap.style.left = CP.x + 'px'; cap.style.top = CP.y + 'px'; };
+    g.onpointerup = function () { if (drag) capKeep(CP); drag = null; };
+  }
+  V.drawCap = drawCap;
+  /* ----- the note: a written note for the whole submission and the voice note, in a pop-up above the bar ----- */
+  function togglePop() { pop.hidden = !pop.hidden; drawCap(); if (!pop.hidden) { var x = pop.querySelector('textarea'); if (x) x.focus(); } }
+  /* ----- zoom: two fingers pinch, a double tap fits the screen ----- */
+  function fitTo(f) {
+    V.fit = f; var P = V.pages[0];
+    if (f === 's' && P) { var h = pages.clientHeight - 32, w = V.baseW(); V.zoom = Math.min(1, h / (w * P.pg.h / P.pg.w)); } else V.zoom = 1;
+    V.pages.forEach(function (Q) { sizePage(V, Q); }); drawCap();
+  }
+  V.fitTo = fitTo;
+  var pinch = null, raf = 0, lastTap = 0, tapXY = null;
+  pages.addEventListener('touchstart', function (e) {
+    var t = e.touches[0];
+    if (e.touches.length === 2) {
+      var a = e.touches[0], b = e.touches[1], r = pages.getBoundingClientRect();
+      pinch = { d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), z: V.zoom, cx: (a.clientX + b.clientX) / 2 - r.left, cy: (a.clientY + b.clientY) / 2 - r.top, sl: pages.scrollLeft, st: pages.scrollTop };
+      e.preventDefault(); return;
+    }
+    if (e.target.classList.contains('ink') && (V.finger || (t && t.touchType === 'stylus'))) e.preventDefault();
+    if (t && t.touchType !== 'stylus' && !V.finger) tapXY = [t.clientX, t.clientY];
+  }, { passive: false });
+  pages.addEventListener('touchmove', function (e) {
+    if (pinch && e.touches.length === 2) {
+      e.preventDefault();
+      var a = e.touches[0], b = e.touches[1], z = Math.max(0.3, Math.min(4, pinch.z * Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) / pinch.d));
+      cancelAnimationFrame(raf); raf = requestAnimationFrame(function () {
+        var k = z / V.zoom, cx = pinch.cx, cy = pinch.cy, sl = pages.scrollLeft, st = pages.scrollTop;
+        V.zoom = z; V.fit = ''; V.pages.forEach(function (Q) { sizePage(V, Q); });
+        pages.scrollLeft = (sl + cx) * k - cx; pages.scrollTop = (st + cy) * k - cy;
+      });
+      return;
+    }
+    tapXY = null;
+    var t = e.touches[0]; if (e.target.classList.contains('ink') && (V.finger || (t && t.touchType === 'stylus'))) e.preventDefault();
+  }, { passive: false });
+  pages.addEventListener('touchend', function (e) {
+    if (pinch && e.touches.length < 2) { pinch = null; drawCap(); return; }
+    if (!tapXY) return;
+    var n = Date.now(); if (n - lastTap < 320) { fitTo(V.fit === 's' ? 'w' : 's'); lastTap = 0; } else lastTap = n;
+    tapXY = null;
+  });
+  /* the page number while scrolling */
+  pages.addEventListener('scroll', function () {
+    if (!V.pages.length) return; var mid = pages.getBoundingClientRect().top + pages.clientHeight / 2, n = 1;
+    V.pages.forEach(function (P, i) { if (P.box.getBoundingClientRect().top < mid) n = i + 1; });
+    pill.textContent = n + ' / ' + V.pages.length; pill.hidden = V.pages.length < 2;
+  });
+  /* ----- keys: ← → students, ↑ ↓ assignments, Esc closes ----- */
+  function keys(e) {
+    if (/input|textarea|select/i.test((e.target.tagName || ''))) return;
+    if (e.key === 'ArrowLeft') { e.preventDefault(); go(idx + 1); } else if (e.key === 'ArrowRight') { e.preventDefault(); go(idx - 1); }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); goEx(at + 1); } else if (e.key === 'ArrowUp') { e.preventDefault(); goEx(at - 1); }
+    else if (e.key === 'Escape') V.close();
+  }
+  document.addEventListener('keydown', keys);
 
   /* this student first, then the next three */
   qDown(key, code, row.files, 9);
@@ -349,11 +482,14 @@ function openViewer(key, code, list, idx) {
   fGet('marks', mk).then(function (m) {
     V.m = m || { ink: {}, hl: [], note: '', audio: null, amime: '', sec: 0, state: '' };
     V.m.hl = V.m.hl || []; V.m.note = V.m.note || '';
-    drawAudio(V);
-    /* a written note for the whole submission */
-    var nw = el('div', 'vnote'), nl = el('label', 'n12', 'ملاحظة للطالب (يراها مع الدرجة)'), nt = el('textarea');
-    nt.dir = 'auto'; nt.rows = 2; nt.value = V.m.note; nt.oninput = function () { V.m.note = nt.value; dirty(V); };
-    nw.appendChild(nl); nw.appendChild(nt); pages.appendChild(nw);
+    V.state();
+    /* the pop-up: the note, the voice note */
+    pop.appendChild(el('b', '', 'ملاحظة لـ ' + subjName(d, row)));
+    var nt = el('textarea'); nt.dir = 'auto'; nt.rows = 4; nt.value = V.m.note; nt.placeholder = 'يراها الطالب في «مراجعة» بعد النشر';
+    nt.oninput = function () { V.m.note = nt.value; dirty(V); }; pop.appendChild(nt);
+    var au = el('div', 'vau'); pop.appendChild(au); V.au = au; drawAudio(V);
+    var cl = btn('تم', 'sec', function () { togglePop(); }); pop.appendChild(cl);
+    drawCap();
     if (row.text) textBlock(V, pages, row.text);
     if ((row.links || []).length) {
       var lw = el('div', 'vlinks'); lw.appendChild(el('div', 'n12', 'الروابط'));
@@ -364,34 +500,34 @@ function openViewer(key, code, list, idx) {
     return row.files.reduce(function (p, f) {
       return p.then(function () {
         if (V.closed) return;
-        var hd = el('div', 'vfile n12', '\u2068' + f.name + '\u2069 · ' + size(f.size || 0)); pages.appendChild(hd);
-        var hold = el('div', 'vload n14', 'جارٍ الفتح…'); pages.appendChild(hold);
+        var hold = el('div', 'vload n14', 'جارٍ فتح ' + f.name + '…'); pages.appendChild(hold);
         return stFetch(key, code, f)
           .then(function (r) { return pagesOf(r).then(function (pp) { return { r: r, pp: pp }; }); })
           .then(function (x) {
             hold.remove();
             if (!x.pp) {
-              var o = el('div', 'vother'); o.appendChild(el('p', 'n14', 'هذا الملف يُفتح في تطبيقه (Word أو Excel أو PowerPoint أو غيرها)، ولا يُكتب عليه هنا.'));
-              o.appendChild(btn('فتح / مشاركة', 'sec', function () { share(x.r.blob, x.r.name); }, 'export')); pages.appendChild(o); return;
+              var o = el('div', 'vother'); o.appendChild(el('p', 'n14', '⁨' + f.name + '⁩ يُفتح في تطبيقه (Word أو Excel أو PowerPoint…)، ولا يُكتب عليه هنا.'));
+              o.appendChild(btn('فتح', 'sec', function () { share(x.r.blob, x.r.name); }, 'export')); pages.appendChild(o); return;
             }
             any = true;
             x.pp.forEach(function (pg, i) { addPage(V, pages, f.id, i, pg); });
+            if (V.fit === 's') fitTo('s');
+            pages.dispatchEvent(new Event('scroll'));
           }).catch(function (e) { hold.textContent = 'تعذّر الفتح: ' + ((e && e.message) || e); hold.classList.add('err'); });
       });
     }, Promise.resolve()).then(function () { if (!any && !row.files.length) pages.appendChild(el('div', 'vload n14', 'لا ملفات في هذا التسليم.')); });
   });
 
-  function setZoom(z) { V.zoom = Math.max(0.5, Math.min(3, z)); V.pages.forEach(function (P) { sizePage(V, P); }); }
   function undo() {
     var u = V.undo.pop(); if (!u) return say('لا شيء للتراجع');
     if (u.hl) { if (u.add) { var j = V.m.hl.indexOf(u.h); if (j > -1) V.m.hl.splice(j, 1); } else V.m.hl.splice(Math.min(u.at, V.m.hl.length), 0, u.h); dirty(V); if (V.paintText) V.paintText(); return; }
     var arr = pageInk(V, u.f, u.i);
-    if (u.add) { var at = arr.indexOf(u.s); if (at > -1) arr.splice(at, 1); } else arr.splice(Math.min(u.at, arr.length), 0, u.s);
+    if (u.add) { var at2 = arr.indexOf(u.s); if (at2 > -1) arr.splice(at2, 1); } else arr.splice(Math.min(u.at, arr.length), 0, u.s);
     dirty(V); V.pages.forEach(function (P) { if (P.f === u.f && P.i === u.i) P.redraw(); });
   }
   var t; function save() { if (V.m && V.m.changed) { V.m.changed = false; fPut('marks', mk, strip(V.m)); } }
-  V.save = function () { clearTimeout(t); t = setTimeout(save, 400); };
-  V.saveNow = function () { clearTimeout(t); V.m.changed = true; save(); };
+  V.save = function () { clearTimeout(t); t = setTimeout(save, 400); if (V.state) V.state(); };
+  V.saveNow = function () { clearTimeout(t); if (V.m) { V.m.changed = true; save(); } };
 }
 function strip(m) { return { ink: m.ink, hl: m.hl || [], note: m.note || '', audio: m.audio, amime: m.amime, sec: m.sec, state: m.state, sentAt: m.sentAt || 0, err: m.err || '' }; }
 
@@ -501,7 +637,7 @@ function addPage(V, host, f, i, pg) {
   return P;
 }
 function sizePage(V, P) {
-  var full = Math.min(document.documentElement.clientWidth - 32, 980), w = Math.round(full * V.zoom), h = Math.round(w * P.pg.h / P.pg.w), dpr = window.devicePixelRatio || 1;
+  var full = V.baseW ? V.baseW() : Math.min(document.documentElement.clientWidth - 32, 980), w = Math.round(full * V.zoom), h = Math.round(w * P.pg.h / P.pg.w), dpr = window.devicePixelRatio || 1;
   P.box.style.width = w + 'px'; P.box.style.height = h + 'px';
   P.ink.width = Math.round(w * dpr); P.ink.height = Math.round(h * dpr); P.redraw();
   var sc = Math.min(4, w * dpr / P.pg.w);
@@ -512,7 +648,7 @@ function sizePage(V, P) {
 
 /* ===================== the voice note ===================== */
 function drawAudio(V) {
-  var au = V.au; au.textContent = '';
+  var au = V.au; if (!au) return; au.textContent = ''; if (V.drawCap) V.drawCap();
   if (V.rec) {
     au.appendChild(el('span', 'recdot'));
     var tm = el('span', 'n14 ltr', '0:00'); au.appendChild(tm); V.rec.tm = tm;
@@ -523,7 +659,7 @@ function drawAudio(V) {
     var a = document.createElement('audio'); a.controls = true; a.src = URL.createObjectURL(V.m.audio); a.className = 'vaudio'; au.appendChild(a);
     au.appendChild(ico('del', 'حذف الملاحظة الصوتية', function () { if (!confirm('تُحذف الملاحظة الصوتية من الجهاز. متابعة؟')) return; V.m.audio = null; V.m.sec = 0; V.m.dropAudio = true; dirty(V); V.saveNow(); drawAudio(V); }));
   }
-  au.appendChild(btn(V.m && V.m.audio ? 'إعادة التسجيل' : 'ملاحظة صوتية', 'sec', function () { startRec(V); }, 'mic'));
+  au.appendChild(btn(V.m && V.m.audio ? 'إعادة' : 'تسجيل', 'sec', function () { startRec(V); }, 'mic'));
 }
 function startRec(V) {
   if (!navigator.mediaDevices || !window.MediaRecorder) return say('التسجيل غير متاح على هذا الجهاز');

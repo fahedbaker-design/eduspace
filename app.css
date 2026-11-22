@@ -191,3 +191,43 @@ body.noscroll{overflow:hidden}
 .score{display:inline-flex;direction:rtl;unicode-bidi:isolate;align-items:baseline;gap:4px;white-space:nowrap;font-variant-numeric:tabular-nums}
 .score .got{font-weight:700}.score .sep,.score .max{color:var(--mute)}
 .vg .gmax{color:var(--mute);font-size:16px;white-space:nowrap}
+/* 0.16 — the grading page (proto_station_v1): the work fills the screen, a floating capsule, one bar at the bottom */
+.vw2{position:fixed;inset:0;z-index:45;background:#dcdee6}
+.vpages2{position:absolute;inset:0 0 64px 0;overflow:auto;-webkit-overflow-scrolling:touch;padding:16px;display:flex;flex-direction:column;align-items:center;gap:16px}
+.vpages2 .vtextw,.vpages2 .vlinks{width:100%;max-width:980px}
+.vpill{position:fixed;left:16px;bottom:80px;z-index:47;background:rgba(29,30,36,.75);color:#fff;font-size:12px;padding:4px 12px;border-radius:999px;pointer-events:none}
+.vpill[hidden]{display:none}
+.cap{position:fixed;z-index:48;display:flex;flex-direction:column;align-items:center;gap:6px;padding:8px;background:rgba(255,255,255,.96);border-radius:999px;box-shadow:0 6px 24px rgba(0,0,0,.18)}
+.cap .grip{width:28px;height:20px;display:flex;align-items:center;justify-content:center;color:var(--mute);cursor:grab;touch-action:none}
+.cap .grip svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2.4;stroke-linecap:round}
+.cap .t{width:42px;height:42px;border:0;border-radius:50%;background:transparent;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--fg)}
+.cap .t svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.9;stroke-linecap:round;stroke-linejoin:round}
+.cap .t.on{background:var(--fg);color:#fff}
+.cap .t.rec{background:var(--bad);color:#fff;animation:blink 1s infinite}
+.cap .cols{display:grid;grid-template-columns:repeat(2,36px);gap:4px}
+.cap .cols .t{width:36px;height:36px}
+.cap .dot{width:18px;height:18px;border-radius:50%;display:block;box-shadow:0 0 0 2px #fff,0 0 0 3px var(--line)}
+.cap .t.on .dot{box-shadow:0 0 0 2px #fff,0 0 0 4px var(--fg)}
+.cap .t.on:has(.dot){background:transparent}
+.cap .sep{width:24px;height:1px;background:var(--line)}
+.cap.min .t,.cap.min .sep,.cap.min .cols{display:none}
+.vbar2{position:fixed;left:0;right:0;bottom:0;height:64px;z-index:49;display:flex;align-items:center;gap:8px;padding:0 12px env(safe-area-inset-bottom);background:var(--card);box-shadow:0 -1px 0 var(--line)}
+.vbar2 .sp{flex:1}
+.vbar2 .tag[hidden]{display:none}
+.nav2{display:flex;align-items:center;gap:2px;background:var(--ground);border-radius:999px;padding:2px;min-width:0}
+.nav2 .a{width:40px;height:40px;border:0;border-radius:50%;background:transparent;display:flex;align-items:center;justify-content:center;cursor:pointer;color:var(--fg);flex:none}
+.nav2 .a svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.nav2 .a.flip svg{transform:scaleX(-1)}
+.nav2 .a:disabled{opacity:.3}
+.nav2 .pick{border:0;background:#fff;border-radius:999px;height:40px;padding:0 14px;display:flex;align-items:center;gap:6px;cursor:pointer;max-width:200px;min-width:0;box-shadow:0 1px 2px rgba(0,0,0,.06);font:inherit;color:var(--fg)}
+.nav2 .pick b{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.nav2 .pick .lab:empty{display:none}
+.vlist{position:fixed;bottom:72px;z-index:50;width:400px;max-height:70vh;overflow:auto;background:#fff;border-radius:24px;box-shadow:0 10px 40px rgba(0,0,0,.25);padding:10px}
+.vlist h4{margin:4px 8px 8px;font-size:14px;color:var(--mute)}
+.vlist .row{display:flex;align-items:center;gap:10px;padding:10px 8px;border-radius:12px;cursor:pointer}
+.vlist .row:hover,.vlist .row.cur{background:var(--ground)}
+.vlist .row .nm{flex:1;min-width:0}.vlist .row .nm small{display:block;color:var(--mute);font-size:12px}
+.vpop{position:fixed;bottom:72px;left:50%;transform:translateX(-50%);z-index:50;width:min(560px,92vw);background:#fff;border-radius:24px;box-shadow:0 10px 40px rgba(0,0,0,.25);padding:16px;display:flex;flex-direction:column;gap:10px}
+.vpop[hidden]{display:none}
+.vpop textarea{width:100%;border:1px solid var(--line);border-radius:12px;padding:10px;font:inherit;font-size:16px;resize:none}
+.vpop .vau{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
