@@ -1,5 +1,5 @@
 /* EduSpace offline — the whole course on the iPad (0.18.0, new): «المساق» «المحاضرات» «الأنشطة» «التوزيع» «الحضور والمشاركة»
-   «التسليم السريع» «الإعدادات», beside «الطلاب» «التسليمات» «سجل الدرجات» (app.js, station.js). Everything is prepared
+   «المناقشة» «الإعدادات», beside «الطلاب» «التسليمات» «سجل الدرجات» (app.js, station.js). Everything is prepared
    offline: each change is applied here at once and kept in the outbox; the sync sends it (the panel's SyncContent.gs),
    the latest edit wins item by item, with a notice. A lecture or an activity made here has an id «t…» until the panel
    gives it its own. Files of lectures and activities wait in the upload queue (IndexedDB «up») and go up in chunks after
@@ -21,11 +21,12 @@ ICON.unlock = '<rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V
 ICON.file = '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>';
 ICON.archive = '<rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>';
 
-/* the ten buttons of a course, in the panel's order (backlog أ) */
+/* the buttons of a course, in the panel's order (backlog أ; 0.19: eight in the row, the distribution and the settings elsewhere) */
 var CTABS = [['info', 'المساق', 'home2'], ['lec', 'المحاضرات', 'play'], ['asg', 'الأنشطة', 'task'], ['students', 'الطلاب', 'users'],
-  ['subs', 'التسليمات', 'inbox'], ['grades', 'السجل', 'grades'], ['dist', 'التوزيع', 'tree'], ['part', 'المشاركة', 'hand2'],
-  ['qk', 'السريع', 'zap'], ['set', 'الإعدادات', 'gear']];
-var CTAB_TIP = { grades: 'سجل الدرجات', part: 'الحضور والمشاركة', qk: 'التسليم السريع' };
+  ['subs', 'التسليمات', 'inbox'], ['grades', 'السجل', 'grades'], ['part', 'المشاركة', 'hand2'],
+  ['qk', 'مناقشة', 'zap']];
+/* 0.19 (ui_notes 32): «التوزيع» opens from the gradebook's row, ⚙ «الإعدادات» is a round button beside the back arrow */
+var CTAB_TIP = { grades: 'سجل الدرجات', part: 'الحضور والمشاركة', qk: 'المناقشات' };
 function codeShow(code) { return String(code || '').replace(/\s+/g, '').replace(/^([A-Z]+)(\d+)$/, '$1 $2'); }
 
 /* ===================== content: what came down, with the changes not sent yet on top ===================== */
@@ -223,7 +224,7 @@ function drawInfo(app, d) {
   g.appendChild(tile(Object.keys(d.students).length, null, 'الطلاب', 'students'));
   g.appendChild(tile(lp, la, 'المحاضرات المنشورة', 'lec'));
   g.appendChild(tile(ap, aa, 'الأنشطة المنشورة', 'asg'));
-  g.appendChild(tile((c.quick.items || []).length, null, 'التسليم السريع', 'qk'));
+  g.appendChild(tile((c.quick.items || []).length, null, 'المناقشات', 'qk'));
   app.appendChild(g);
   var pend = S.outbox.filter(function (o) { return o.course === R.key; }).length, ups = (UPS || []).filter(function (u) { return u.course === R.key; }).length;
   var p = el('div', 'card'); p.style.marginTop = '16px';
@@ -465,8 +466,8 @@ function drawPart(app, d) {
 var QK_OPEN = {};
 function drawQuick(app, d) {
   var c = CT(d), q = c.quick || { items: [] }, can = cmay(d, 'quick');
-  head(app, 'التسليم السريع', can ? [btn('إضافة', '', function () { qkForm(d, null); }, 'plus')] : []);
-  if (!q.items.length) return emptyNote(app, 'لا طلبات تسليم سريع بعد.');
+  head(app, 'المناقشات', can ? [btn('إضافة', '', function () { qkForm(d, null); }, 'plus')] : []);
+  if (!q.items.length) return emptyNote(app, 'لا مناقشات بعد.');
   q.items.forEach(function (it) {
     var k = el('div', 'card item'), h = el('div', 'ih'), t = el('div', 'it');
     t.appendChild(el('h3', '', it.title || '—'));
@@ -510,7 +511,7 @@ function selMode(it) {
 }
 function qkForm(d, it) {
   var isNew = !it, id = isNew ? tmpId() : it.id, secs = (CT(d).quick.sections || []).map(function (x) { return [x.name, 'الشعبة ' + x.name]; });
-  sheet(isNew ? 'تسليم سريع جديد' : 'تعديل التسليم السريع', function (b) {
+  sheet(isNew ? 'مناقشة جديدة' : 'تعديل المناقشة', function (b) {
     var ti = inp('text', it && it.title), sc = selOf([['', 'كل الشعب']].concat(secs), it ? it.section : ''), md = selOf([['auto', 'تلقائي حسب الوقت'], ['open', 'مفتوح الآن'], ['closed', 'مغلق']], it ? it.mode : 'auto');
     var o1 = inp('datetime-local', it && it.openAt), o2 = inp('datetime-local', it && it.closeAt), gr = inp('number', it ? it.graceMin : 0);
     var sl = area(it ? (it.slots || []).map(function (s) { return s.label; }).join('\n') : 'الفكرة\nالمسقط الأفقي', 'لوحة في كل سطر');
@@ -530,7 +531,7 @@ function qkForm(d, it) {
     if (!x.title) return say('العنوان مطلوب');
     if (x.mode === 'auto' && !x.closeAt) return say('حدّد وقت الإغلاق، أو اختر «مفتوح الآن»');
     if (!x.slots.length && !x.ideaText && !x.audio) return say('أضف لوحة واحدة على الأقل');
-    recC(R.key, 'qk', 'save', id, { d: x }, (isNew ? 'تسليم سريع جديد: ' : 'تعديل: ') + x.title);
+    recC(R.key, 'qk', 'save', id, { d: x }, (isNew ? 'مناقشة جديدة: ' : 'تعديل: ') + x.title);
     h.close(); draw(); say('حُفظ على الجهاز، ويُرسل عند المزامنة');
   }, 'check']]);
 }
