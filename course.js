@@ -1,4 +1,4 @@
-/* EduSpace offline — the whole course on the iPad (0.18.0, new): «المساق» «المحاضرات» «الأنشطة» «التوزيع» «الحضور والمشاركة»
+/* EduSpace offline — the whole course on the iPad (0.20.0: the switch instead of the eye for lectures and activities; a discussion is open or closed — no «تلقائي». 0.18.0, new): «المساق» «المحاضرات» «الأنشطة» «التوزيع» «الحضور والمشاركة»
    «المناقشة» «الإعدادات», beside «الطلاب» «التسليمات» «سجل الدرجات» (app.js, station.js). Everything is prepared
    offline: each change is applied here at once and kept in the outbox; the sync sends it (the panel's SyncContent.gs),
    the latest edit wins item by item, with a notice. A lecture or an activity made here has an id «t…» until the panel
@@ -198,6 +198,14 @@ function inp(type, value, ph, id) { var i = el('input', 'inp'); i.type = type ||
 function area(value, ph) { var t = el('textarea', 'inp ta'); t.value = value || ''; if (ph) t.placeholder = ph; t.rows = 4; return t; }
 function selOf(list, cur) { var s = el('select', 'inp'); list.forEach(function (o) { var x = el('option', '', o[1]); x.value = o[0]; if (String(o[0]) === String(cur)) x.selected = true; s.appendChild(x); }); return s; }
 function chk(label, on) { var l = el('label', 'opt'), c = el('input'); c.type = 'checkbox'; c.checked = !!on; l.appendChild(c); l.appendChild(document.createTextNode(label)); l.box = c; return l; }
+/* 0.20 (ui_notes 51, 52): the switch instead of the eye — the word, then the switch at the card's edge */
+function swc(on, onText, offText, fn) {
+  var w = el('label', 'sw' + (on ? ' on' : '')); w.appendChild(el('span', '', on ? onText : offText)); w.appendChild(el('i'));
+  w.setAttribute('role', 'switch'); w.setAttribute('aria-checked', on ? 'true' : 'false'); w.tabIndex = 0;
+  function flip(e) { e.preventDefault(); e.stopPropagation(); on = !on; w.classList.toggle('on', on); w.firstChild.textContent = on ? onText : offText; fn(on); }
+  w.onclick = flip; w.onkeydown = function (e) { if (e.key === ' ' || e.key === 'Enter') flip(e); };
+  return w;
+}
 function rico(k, tip, fn, cls) { var b = ico(k, tip, function (e) { e.stopPropagation(); fn(e); }); if (cls) b.classList.add(cls); return b; }
 var STAT_NAME = { draft: 'مسودة', scheduled: 'مجدول', published: 'منشور', archived: 'مؤرشف' };
 function stTag(s) { return el('span', 'tag' + (s === 'published' ? ' ok' : s === 'archived' ? '' : ' warn'), STAT_NAME[s] || s); }
@@ -251,9 +259,9 @@ function drawLec(app, d) {
     if (can) {
       a.appendChild(rico('plus', 'إضافة ملف أو رابط', function () { matAdd(d, 'lec', l.id); }));
       a.appendChild(rico('pen', 'تعديل', function () { lecForm(d, l); }));
-      a.appendChild(rico(l.status === 'published' ? 'eyeoff' : 'eye', l.status === 'published' ? 'إخفاء' : 'نشر', function () { recC(R.key, 'lec', 'status', l.id, { v: l.status === 'published' ? 'draft' : 'published', b: stampOf(l) }, (l.status === 'published' ? 'إخفاء ' : 'نشر ') + l.title); draw(); }));
       a.appendChild(rico('archive', 'أرشفة', function () { recC(R.key, 'lec', 'status', l.id, { v: 'archived', b: stampOf(l) }, 'أرشفة ' + l.title); draw(); }));
       a.appendChild(rico('del', 'حذف', function () { itemDel(d, 'lec', l.id, l.title, stampOf(l), (l.materials || []).length); }, 'red'));
+      a.appendChild(swc(l.status === 'published', 'منشورة', 'مسودة', function (on) { recC(R.key, 'lec', 'status', l.id, { v: on ? 'published' : 'draft', b: stampOf(l) }, (on ? 'نشر ' : 'إخفاء ') + l.title); draw(); }));   /* 0.20: the switch */
     }
     h.appendChild(a); k.appendChild(h);
     var m = [l.pubDate ? l.pubDate : '', l.timeFrom ? l.timeFrom + (l.timeTo ? '–' + l.timeTo : '') : ''].filter(Boolean).join(' · ');
@@ -346,9 +354,9 @@ function drawAsg(app, d) {
     if (can) {
       ac.appendChild(rico('plus', 'إضافة ملف أو رابط', function () { matAdd(d, 'asg', id); }));
       ac.appendChild(rico('pen', 'تعديل', function () { asgForm(d, a); }));
-      ac.appendChild(rico(a.status === 'published' ? 'eyeoff' : 'eye', a.status === 'published' ? 'إخفاء' : 'نشر', function () { recC(R.key, 'asg', 'status', id, { v: a.status === 'published' ? 'draft' : 'published', b: stampOf(a) }, (a.status === 'published' ? 'إخفاء ' : 'نشر ') + a.code); draw(); }));
       ac.appendChild(rico('archive', 'أرشفة', function () { recC(R.key, 'asg', 'status', id, { v: 'archived', b: stampOf(a) }, 'أرشفة ' + a.code); draw(); }));
       ac.appendChild(rico('del', 'حذف', function () { itemDel(d, 'asg', id, a.code, stampOf(a), (a.materials || []).length); }, 'red'));
+      ac.appendChild(swc(a.status === 'published', 'منشور', 'مسودة', function (on) { recC(R.key, 'asg', 'status', id, { v: on ? 'published' : 'draft', b: stampOf(a) }, (on ? 'نشر ' : 'إخفاء ') + a.code); draw(); }));   /* 0.20: the switch */
     }
     h.appendChild(ac); k.appendChild(h);
     var m = ['من ' + (a.maxGrade || 10), a.week ? 'الأسبوع ' + a.week : '', a.dueAt ? 'الاستحقاق ' + String(a.dueAt).replace('T', ' ') : '', (a.types || []).map(function (x) { return (ATYPES.filter(function (y) { return y[0] === x; })[0] || [x, x])[1]; }).join('، ')].filter(Boolean).join(' · ');
@@ -503,22 +511,20 @@ function drawQuick(app, d) {
     app.appendChild(k);
   });
 }
+/* 0.20 (ui_notes 59, 60): the switch «مفتوح / مغلق» — no «تلقائي» */
 function selMode(it) {
-  var s = selOf([['auto', 'تلقائي'], ['open', 'مفتوح'], ['closed', 'مغلق']], it.mode || 'auto'); s.className = 'inp mini';
-  s.onclick = function (e) { e.stopPropagation(); };
-  s.onchange = function () { recC(R.key, 'qk', 'mode', it.id, { v: s.value }, 'وضع ' + it.title); draw(); };
-  return s;
+  var on = it.status ? it.status.k === 'open' : it.mode === 'open';
+  return swc(on, 'مفتوح', 'مغلق', function (v) { recC(R.key, 'qk', 'mode', it.id, { v: v ? 'open' : 'closed' }, 'وضع ' + it.title); draw(); });
 }
 function qkForm(d, it) {
   var isNew = !it, id = isNew ? tmpId() : it.id, secs = (CT(d).quick.sections || []).map(function (x) { return [x.name, 'الشعبة ' + x.name]; });
   sheet(isNew ? 'مناقشة جديدة' : 'تعديل المناقشة', function (b) {
-    var ti = inp('text', it && it.title), sc = selOf([['', 'كل الشعب']].concat(secs), it ? it.section : ''), md = selOf([['auto', 'تلقائي حسب الوقت'], ['open', 'مفتوح الآن'], ['closed', 'مغلق']], it ? it.mode : 'auto');
+    var ti = inp('text', it && it.title), sc = selOf([['', 'كل الشعب']].concat(secs), it ? it.section : ''), md = selOf([['open', 'مفتوح الآن'], ['closed', 'مغلق']], it && it.mode === 'closed' ? 'closed' : 'open');
     var o1 = inp('datetime-local', it && it.openAt), o2 = inp('datetime-local', it && it.closeAt), gr = inp('number', it ? it.graceMin : 0);
     var sl = area(it ? (it.slots || []).map(function (s) { return s.label; }).join('\n') : 'الفكرة\nالمسقط الأفقي', 'لوحة في كل سطر');
     var ix = chk('نص الفكرة', it && it.ideaText), au = chk('شرح صوتي', it && it.audio), mo = inp('number', it ? it.maxOpt : 1);
     b.appendChild(fld('العنوان', ti));
-    var r = el('div', 'cols3'); r.appendChild(fld('الشعبة', sc)); r.appendChild(fld('الوضع', md)); r.appendChild(fld('مهلة بالدقائق', gr)); b.appendChild(r);
-    var r2 = el('div', 'cols3'); r2.appendChild(fld('يُفتح', o1)); r2.appendChild(fld('يُغلق', o2)); b.appendChild(r2);
+    var r = el('div', 'cols3'); r.appendChild(fld('الشعبة', sc)); r.appendChild(fld('الوضع', md)); b.appendChild(r);   /* 0.20: no times (they served «تلقائي») */
     b.appendChild(fld('اللوحات المطلوبة', sl)); b.appendChild(fld('خيارات لكل لوحة (1–3)', mo));
     var r3 = el('div', 'row'); r3.appendChild(ix); r3.appendChild(au); b.appendChild(r3);
     b._get = function () {
@@ -529,7 +535,6 @@ function qkForm(d, it) {
   }, [['حفظ', '', function (h) {
     var x = h.body._get();
     if (!x.title) return say('العنوان مطلوب');
-    if (x.mode === 'auto' && !x.closeAt) return say('حدّد وقت الإغلاق، أو اختر «مفتوح الآن»');
     if (!x.slots.length && !x.ideaText && !x.audio) return say('أضف لوحة واحدة على الأقل');
     recC(R.key, 'qk', 'save', id, { d: x }, (isNew ? 'مناقشة جديدة: ' : 'تعديل: ') + x.title);
     h.close(); draw(); say('حُفظ على الجهاز، ويُرسل عند المزامنة');
