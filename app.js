@@ -1,8 +1,8 @@
-/* EduSpace offline — 0.19.0: no demo data; sign-in by user name and a six-digit code (config.json gives the address of «EduSpace Sync»), the device stays signed in until «خروج», a device removed in the panel is wiped; «المناقشة» for the quick submission; the layout of the whole system (48 margins, square home cards, bars 24). 0.18.1: the corrections of a course are sent again (their key is read from the right, mParse in station.js); the storage names the course and the assignment. 0.18.0: the whole course on the iPad — ten buttons in the course's top row (course.js: lectures, activities, the distribution, the participation, quick submissions, settings, all prepared offline, files in an upload queue); the sync runs by itself (on opening, when the network comes back, every 10 minutes) and sends the files in chunks after the changes; a new version reloads the app by itself (not inside the grading page); what belongs to a deleted or archived course leaves on opening and in «التخزين» too; the course code shown «EARC 2204»; cards with the approved shadow. 0.17.0: «حذف المساق» in the course bar (the teacher's iPad deletes as the panel does: to the Drive trash; an empty course at once, any other after a confirmation); after every sync everything of a course no longer in the list (deleted or archived) leaves the device (purgeGone). 0.11.0: one version number with the panel (MAJOR.MINOR.PATCH); a teaching assistant's device (only his courses, his permissions: «can», read-only items); a warning when the panel's major version differs. 0.5.4: names of naming_v1.md («سجل الدرجات»، «استيراد من مودل»، «كود الربط»). 0.5.3: the sync state on the right under the title; the version under the mark; each layer of the progress bar has its own bubble. 0.5.2: round buttons on the right, the mark alone on the left; the sync state under the title; home cards at the bottom; the progress bar tells its layers on a tap; a new version reloads itself. 0.5.1: the version next to the mark. 0.5: two-way sync — every change is a record in the outbox (grade, section, publish, removal) with the value it started from; «مزامنة الآن» sends them, then downloads; a cell changed in both places comes back as a conflict to decide. 0.4: linked to EduSpace (read only: «تنزيل بياناتي» brings the real courses; editing returns with two-way sync); tips on round buttons. 0.2: the approved style (handoff/brand_rules.md); 0.1: demo data, simulated sync.
+/* EduSpace offline — 0.20.0: the sign-in one field at a time (the user name, then the code; «لست أنا», «نسيت الرمز»); the home opens at once and the courses come down behind it (firstPull); the spacing of English by size. 0.19.0: no demo data; sign-in by user name and a six-digit code (config.json gives the address of «EduSpace Sync»), the device stays signed in until «خروج», a device removed in the panel is wiped; «المناقشة» for the quick submission; the layout of the whole system (48 margins, square home cards, bars 24). 0.18.1: the corrections of a course are sent again (their key is read from the right, mParse in station.js); the storage names the course and the assignment. 0.18.0: the whole course on the iPad — ten buttons in the course's top row (course.js: lectures, activities, the distribution, the participation, quick submissions, settings, all prepared offline, files in an upload queue); the sync runs by itself (on opening, when the network comes back, every 10 minutes) and sends the files in chunks after the changes; a new version reloads the app by itself (not inside the grading page); what belongs to a deleted or archived course leaves on opening and in «التخزين» too; the course code shown «EARC 2204»; cards with the approved shadow. 0.17.0: «حذف المساق» in the course bar (the teacher's iPad deletes as the panel does: to the Drive trash; an empty course at once, any other after a confirmation); after every sync everything of a course no longer in the list (deleted or archived) leaves the device (purgeGone). 0.11.0: one version number with the panel (MAJOR.MINOR.PATCH); a teaching assistant's device (only his courses, his permissions: «can», read-only items); a warning when the panel's major version differs. 0.5.4: names of naming_v1.md («سجل الدرجات»، «استيراد من مودل»، «كود الربط»). 0.5.3: the sync state on the right under the title; the version under the mark; each layer of the progress bar has its own bubble. 0.5.2: round buttons on the right, the mark alone on the left; the sync state under the title; home cards at the bottom; the progress bar tells its layers on a tap; a new version reloads itself. 0.5.1: the version next to the mark. 0.5: two-way sync — every change is a record in the outbox (grade, section, publish, removal) with the value it started from; «مزامنة الآن» sends them, then downloads; a cell changed in both places comes back as a conflict to decide. 0.4: linked to EduSpace (read only: «تنزيل بياناتي» brings the real courses; editing returns with two-way sync); tips on round buttons. 0.2: the approved style (handoff/brand_rules.md); 0.1: demo data, simulated sync.
  * Everything is kept on the device (IndexedDB); every change is written to an outbox that the sync sends later.
  * Views: home (courses) · course: students | grades | submissions · sheets: sync, export, bulk, backup. */
 'use strict';
-var VERSION = '0.19.0';                 /* the system's version: the same number as the panel (handoff/backlog.md) */
+var VERSION = '0.20.0';                 /* the system's version: the same number as the panel (handoff/backlog.md) */
 var $ = function (s, r) { return (r || document).querySelector(s); };
 var ICON = {
   sync: '<path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/>',
@@ -152,7 +152,7 @@ function syncChip() {
   var c = $('#sync'); if (!c) return;
   var n = S.outbox.length, on = navigator.onLine;
   c.className = 'sync' + (!on ? ' off' : n ? ' pend' : '');
-  var busy = typeof AUTO !== 'undefined' && AUTO.busy;
+  var busy = (typeof AUTO !== 'undefined' && AUTO.busy) || !!S.loading;
   c.innerHTML = '<span class="dot"></span>' + (busy ? 'جارٍ المزامنة…' : n ? pl(n, 'تغيير', 'تغييرات') + ' بانتظار الإرسال' : 'كل شيء متزامن') + (on ? '' : ' · بلا إنترنت');
 }
 function sheet(title, build, foot) {
@@ -232,40 +232,63 @@ function pinRow(done) {
   w.lock = function (on) { boxes.forEach(function (b) { b.disabled = !!on; }); };
   return w;
 }
+/* 0.20 (ui_notes 55, 60): one field at a time — the user name, then the code. A user who signed in on this device
+   before goes straight to the code, with «لست أنا» and «نسيت الرمز». The sign-in no longer waits for the download:
+   the home opens at once and the courses come down behind it (a failed download shows why). */
+var LG_STEP = '';
 function drawLogin(app) {
   app.classList.add('home', 'lg');
   var top = el('div', 'bar lg-top');
   top.appendChild(ico('globe', 'اللغة: العربية · الإنجليزية قريبًا', function () { say('الواجهة الإنجليزية قريبًا'); }));
   top.appendChild(el('span', 'sp')); top.appendChild(brand()); app.appendChild(top);
   var mid = el('div', 'lg-mid'), h = el('h1', '', 'مرحبًا'); h.appendChild(el('span', '', 'EduSpace')); mid.appendChild(h); app.appendChild(mid);
-  var c = el('div', 'card lg-card');
+  var c = el('div', 'card lg-card'), saved = '';
+  try { saved = localStorage.getItem('es_user') || ''; } catch (e) { /* ignore */ }
   if (LG_NOTE) c.appendChild(el('p', 'banner', LG_NOTE));
-  var f = el('div', 'field'); f.appendChild(el('label', 'lab', 'اسم المستخدم'));
-  var u = el('input', 'inp'); u.type = 'text'; u.dir = 'ltr'; u.autocomplete = 'username'; u.autocapitalize = 'none'; u.spellcheck = false;
-  try { u.value = localStorage.getItem('es_user') || ''; } catch (e) { /* ignore */ }
-  f.appendChild(u); c.appendChild(f);
-  c.appendChild(el('label', 'lab', 'رمز الدخول'));
   var er = el('p', 'n12 err');
+  if (!saved || LG_STEP === 'user') {
+    c.appendChild(el('label', 'lab', 'اسم المستخدم'));
+    var row = el('div', 'lg-row'), u = el('input', 'inp'); u.type = 'text'; u.dir = 'ltr'; u.autocomplete = 'username'; u.autocapitalize = 'none'; u.spellcheck = false; u.value = saved;
+    function next() {
+      var user = String(u.value || '').trim().toLowerCase();
+      if (!/^[a-z0-9._-]{2,40}$/.test(user)) { er.textContent = 'اكتب اسم المستخدم كما أعطاك المدرّس'; u.focus(); return; }
+      try { localStorage.setItem('es_user', user); } catch (e) { /* ignore */ }
+      LG_STEP = 'pin'; draw();
+    }
+    u.onkeydown = function (e) { if (e.key === 'Enter') next(); };
+    row.appendChild(u); row.appendChild(btn('دخول', '', next)); c.appendChild(row); c.appendChild(er);
+    app.appendChild(c);
+    setTimeout(function () { try { u.focus(); } catch (e) { /* ignore */ } }, 60);
+    return;
+  }
+  var who = el('div', 'lg-who'); who.appendChild(el('label', 'lab', 'رمز الدخول')); var un = el('span', 'n12 ltr', saved); who.appendChild(un); c.appendChild(who);
   var pr = pinRow(function (pin) {
-    var user = String(u.value || '').trim().toLowerCase();
-    if (!user) { er.textContent = 'اكتب اسم المستخدم'; pr.clear(); u.focus(); return; }
-    if (!navigator.onLine) { er.textContent = 'أول دخول يحتاج إنترنت. بعده يعمل الآيباد بلا إنترنت.'; pr.clear(); return; }
+    if (!navigator.onLine) { er.textContent = 'الدخول يحتاج إنترنت. بعده يعمل الآيباد بلا إنترنت.'; pr.clear(); return; }
     er.textContent = ''; pr.lock(true); say('جارٍ الدخول…');
     loadCfg().then(function (cfg) {
       if (!cfg || !cfg.sync) throw new Error('لم تُنشر إعدادات التطبيق بعد. ثبّت التحديث من اللوحة (مع مفتاح GitHub)، ثم أعد المحاولة.');
       var link = { t: '', url: 'https://script.google.com/macros/s/' + cfg.sync + '/exec' };
-      return api(link, 'login', { u: user, p: pin, dev: devName() }).then(function (x) {
-        link.t = x.t; link.device = x.device; S = emptyState(); S.link = link; S.owner = x.owner || '';
-        try { localStorage.setItem('es_user', user); } catch (e) { /* ignore */ }
-        LG_NOTE = ''; persist();
-        return pull().then(function (y) { go('home'); say('مرحبًا' + (x.owner ? ' ' + x.owner : '') + ' · نزلت ' + pl(y.courses.length, 'مساق', 'مساقات')); });
+      return api(link, 'login', { u: saved, p: pin, dev: devName() }).then(function (x) {
+        link.t = x.t; link.device = x.device; S = emptyState(); S.link = link; S.owner = x.owner || ''; S.loading = true;
+        LG_NOTE = ''; LG_STEP = ''; persist();
+        go('home'); say('مرحبًا' + (x.owner ? ' ' + x.owner : ''));
+        firstPull();
       });
     }).catch(function (e) { pr.lock(false); pr.clear(); er.textContent = String((e && e.message) || e); });
   });
   c.appendChild(pr); c.appendChild(er);
-  c.appendChild(el('p', 'n12', 'اسم المستخدم ورمز الدخول من المدرّس (أو من لوحتك: ⚙ ← «الأجهزة»). يبقى الدخول على هذا الجهاز حتى «خروج».'));
+  var links = el('div', 'lg-links');
+  var me = el('button', 'lnk', 'لست أنا'); me.type = 'button'; me.onclick = function () { try { localStorage.removeItem('es_user'); } catch (e) { /* ignore */ } LG_STEP = 'user'; draw(); };
+  var fg = el('button', 'lnk', 'نسيت الرمز'); fg.type = 'button'; fg.onclick = function () { er.textContent = ''; sheet('نسيت الرمز', function (b) { b.appendChild(el('p', '', 'اطلب من المدرّس إعادة تعيين رمزك.')); }); };
+  links.appendChild(me); links.appendChild(fg); c.appendChild(links);
   app.appendChild(c);
-  setTimeout(function () { try { (u.value ? pr.querySelector('input') : u).focus(); } catch (e) { /* ignore */ } }, 60);
+  setTimeout(function () { try { pr.querySelector('input').focus(); } catch (e) { /* ignore */ } }, 60);
+}
+/* the first download after the sign-in, behind the home page */
+function firstPull() {
+  S.loading = true; draw();
+  return pull().then(function (y) { S.loading = false; persist(); draw(); say('نزلت ' + pl(y.courses.length, 'مساق', 'مساقات')); })
+    .catch(function (e) { S.loading = false; persist(); draw(); fail('تعذّر تنزيل المساقات', e); });
 }
 /* «خروج», or the panel removed this device: everything on it goes */
 function wipeAll(note) {
@@ -563,7 +586,8 @@ function drawHome(app) {
   tint(document.body, '#7c879a');
   app.appendChild(topBar());
   var h = new Date().getHours();
-  title(app, h < 12 ? 'صباح الخير' : 'مساء الخير', 'لديك ' + pl(S.courses.length, 'مساق', 'مساقات') + ' على هذا الجهاز');
+  title(app, h < 12 ? 'صباح الخير' : 'مساء الخير', S.loading ? 'جارٍ تنزيل المساقات…' : 'لديك ' + pl(S.courses.length, 'مساق', 'مساقات') + ' على هذا الجهاز');
+  if (S.loading || !S.courses.length) { var w = el('div', 'card lg-wait'); w.appendChild(el('p', 'n14', S.loading ? 'جارٍ تنزيل المساقات من اللوحة. قد يستغرق ذلك دقيقة، وتظهر هنا حين تكتمل.' : 'لا مساقات على هذا الجهاز بعد.')); if (!S.loading) w.appendChild(btn('تنزيل', '', function () { firstPull(); })); app.appendChild(w); app.classList.add('home'); return; }
   var g = el('div', 'grid');
   S.courses.forEach(function (c, i) {
     var d = S.data[c.key], it = currentItem(d), x = it ? itemStats(d, it) : { total: Object.keys(d.students).length, sub: 0, graded: 0 };
@@ -918,13 +942,30 @@ function openExport(d, ids) {
   }, 'export']]);
 }
 
+/* 0.20 (ui_notes 56): English letters and digits closer together as they grow (48 → 70%, 28 → 80%, 18 → 90%);
+   only runs of Latin letters and digits are wrapped — Arabic is joined, its spacing never changes */
+var TRACK = { 48: '-0.03em', 28: '-0.02em', 18: '-0.01em' }, TRACK_RE = /[A-Za-z0-9@%][A-Za-z0-9@%.\\:_\-]*(?:\s+[A-Za-z0-9@%][A-Za-z0-9@%.\\:_\-]*)*/g;
+function trackLatin(root) {
+  if (!root || !root.querySelectorAll) return;
+  [].forEach.call(root.querySelectorAll('h1,h2,h3,.big,.tile b,.oc-s b'), function (host) {
+    if (host.__tr) return; host.__tr = 1;
+    var ls = TRACK[Math.round(parseFloat(getComputedStyle(host).fontSize))]; if (!ls) return;
+    var w = document.createTreeWalker(host, NodeFilter.SHOW_TEXT, null), n, list = [];
+    while ((n = w.nextNode())) { TRACK_RE.lastIndex = 0; if (n.parentNode.className !== 'tr' && TRACK_RE.test(n.data)) list.push(n); }
+    list.forEach(function (t) {
+      var f = document.createDocumentFragment(), d = t.data, i = 0, m; TRACK_RE.lastIndex = 0;
+      while ((m = TRACK_RE.exec(d))) { f.appendChild(document.createTextNode(d.slice(i, m.index))); var sp = document.createElement('span'); sp.className = 'tr'; sp.textContent = m[0]; sp.style.letterSpacing = ls; f.appendChild(sp); i = m.index + m[0].length; }
+      f.appendChild(document.createTextNode(d.slice(i))); t.parentNode.replaceChild(f, t);
+    });
+  });
+}
 /* ===================== draw / start ===================== */
 function draw() {
   var app = $('#app'), y = window.scrollY; app.textContent = ''; app.classList.remove('home');
   app.classList.remove('lg');
-  if (!S.link) { drawLogin(app); return; }                     /* 0.19: nothing before signing in */
+  if (!S.link) { drawLogin(app); trackLatin(app); return; }      /* 0.19: nothing before signing in */
   if (R.view === 'course' && S.data[R.key]) drawCourse(app); else drawHome(app);
-  syncChip(); window.scrollTo(0, y);
+  syncChip(); trackLatin(app); window.scrollTo(0, y);
 }
 addEventListener('online', syncChip); addEventListener('offline', syncChip);
 addEventListener('hashchange', function () { fromHash(); draw(); });
@@ -948,7 +989,8 @@ kvGet('state').then(function (s) {
   S = (s && s.v >= 2 && !s.demo && s.link) ? s : emptyState(); if (S !== s) persist(); fromHash(); draw();   /* 0.19: no demo data */
   loadCfg();
   purgeGone(); upList();                              /* 0.18: what a deleted course left goes at once; the queue is read */
-  setTimeout(function () { autoSync('open'); }, 1500);
+  if (S.link && (S.loading || !S.courses.length)) firstPull();      /* 0.20: the first download did not finish */
+  else setTimeout(function () { autoSync('open'); }, 1500);
 })
   .catch(function (e) { $('#app').textContent = 'تعذّر فتح التخزين على الجهاز: ' + e.message; });
 /* 0.15.1: copying gives only what is seen. The invisible direction marks kept around numbers (so a number keeps its
