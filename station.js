@@ -1,4 +1,4 @@
-/* EduSpace offline — the grading station (0.18.0: «التخزين» first removes what a deleted or archived course left (purgeGone); its bar at the top (app.css). 0.17.0: «التخزين» no longer deletes a live course's files on the iPad alone — they leave when the course is deleted or archived; «تنظيف» stays. 0.16.0: the grading page of proto_station_v1 — the work fills the screen, a
+/* EduSpace offline — the grading station (0.18.1: the corrections are read by their key from the right (mParse) — the course key holds «|», so a correction of a course «EARC2204|S1» was never sent and «التخزين» showed «? · S1»; «التخزين» names the course and the assignment, says «مساق محذوف» for what a deleted course left, with «حذف»; a clearer «تنظيف». 0.18.0: «التخزين» first removes what a deleted or archived course left (purgeGone); its bar at the top (app.css). 0.17.0: «التخزين» no longer deletes a live course's files on the iPad alone — they leave when the course is deleted or archived; «تنظيف» stays. 0.16.0: the grading page of proto_station_v1 — the work fills the screen, a
    floating capsule of tools, one bar at the bottom, students and assignments ‹ ›, pinch to zoom, fit screen / width. 0.14.0: a background queue — files come down a few at a time and the
    student opened jumps the queue; «إرسال» sends in the background; lighter annotated pages. 0.13.0: a submitted text is shown as text — selectable, copyable — and the
    teacher highlights parts of it with a note on each (hl); links open; a written note for the whole submission;
@@ -38,6 +38,8 @@ function fAll(store) {
   });
 }
 function mKey(course, code, s) { return course + '|' + code + '|' + s; }
+/* 0.18.1: read from the right — the course key itself holds «|» (EARC2204|S1), so its first part is not the course */
+function mParse(k) { var q = String(k).split('|'), s = q.pop(), code = q.pop(); return { course: q.join('|'), code: code, s: s }; }
 function size(n) { return n >= 1048576 ? (Math.round(n / 104857.6) / 10) + ' م.ب' : Math.max(1, Math.round(n / 1024)) + ' ك.ب'; }
 
 /* ===================== the server ===================== */
@@ -115,7 +117,7 @@ function qWake(id, err, rec) {
 function qDoSend(k) {
   return fGet('marks', k).then(function (m) {
     if (!m || m.state !== 'ready') return;
-    var q = k.split('|'), d = S.data[q[0]]; if (!d) return;
+    var mp = mParse(k), q = [mp.course, mp.code, mp.s], d = S.data[q[0]]; if (!d) return;   /* 0.18.1: the course key holds «|» */
     var row = (stOf(d, q[1]).list || []).filter(function (r) { return r.s === q[2]; })[0];
     if (!row) return;
     m.state = 'sending'; qBar();
@@ -783,22 +785,34 @@ function openStorage() {
     function load() {
       Promise.all([fAll('files'), fAll('marks'), navigator.storage && navigator.storage.estimate ? navigator.storage.estimate() : Promise.resolve(null)]).then(function (r) {
         var files = r[0], marks = r[1], est = r[2], by = {};
-        files.forEach(function (x) { var k = x.v.course + '|' + x.v.code; (by[k] = by[k] || { f: 0, n: 0, m: 0, a: 0, ready: 0 }); by[k].f += x.v.size || 0; by[k].n++; });
-        marks.forEach(function (x) { var q = x.k.split('|'), k = q[0] + '|' + q[1]; (by[k] = by[k] || { f: 0, n: 0, m: 0, a: 0, ready: 0 }); by[k].m++; by[k].a += x.v.audio ? x.v.audio.size : 0; if (x.v.state === 'ready' || x.v.state === 'draft') by[k].ready++; });
+        /* 0.18.1: grouped by course and assignment, read from the right (the course key holds «|») */
+        function grp(course, code) { var k = course + '\u0001' + code; return by[k] = by[k] || { course: course, code: code, f: 0, n: 0, m: 0, a: 0, ready: 0 }; }
+        files.forEach(function (x) { var g = grp(x.v.course, x.v.code); g.f += x.v.size || 0; g.n++; });
+        marks.forEach(function (x) { var mp = mParse(x.k), g = grp(mp.course, mp.code); g.m++; g.a += x.v.audio ? x.v.audio.size : 0; if (x.v.state === 'ready' || x.v.state === 'draft') g.ready++; });
         p.textContent = est ? 'المستعمل ' + size(est.usage || 0) + (est.quota ? ' من ' + size(est.quota) + ' متاحة للتطبيق' : '') : '';
         list.textContent = '';
         if (!Object.keys(by).length) list.appendChild(el('p', 'n14', 'لا ملفات تسليمات على الجهاز.'));
-        else list.appendChild(el('p', 'n12', 'هذه نسخ من تسليمات الطلاب تبقى على الجهاز للتصحيح بلا إنترنت. تُمحى وحدها حين يُحذف المساق أو يُؤرشف. «تنظيف» يمحو من هذا الآيباد نسخ التصحيحات التي أُرسلت فقط؛ تبقى عند الطلاب على الخادم، ولا يمحو ما لم يُرسل.'));
+        else list.appendChild(el('p', 'n12', 'نسخ من تسليمات الطلاب وتصحيحاتك على هذا الآيباد، لتصحّح بلا إنترنت. «تنظيف» يمحو التصحيحات التي وصلت إلى الطلاب فقط، ليفرغ مكانها؛ لا يمحو تصحيحًا لم يُرسل ولا ملفات الطلاب. ما يتبع مساقًا محذوفًا يُحذف بزر «حذف».'));
         Object.keys(by).sort().forEach(function (k) {
-          var q = k.split('|'), c = courseOf(q[0]), x = by[k], row = el('div', 'ch');
-          var t = el('div', 'sp'); t.appendChild(el('b', '', c.code + ' · ' + q[1]));
+          var x = by[k], c = S.courses.filter(function (y) { return y.key === x.course; })[0], row = el('div', 'ch');
+          var a = c && S.data[c.key] ? ((S.data[c.key].items || []).filter(function (y) { return y.id === x.code; })[0] || null) : null;
+          var t = el('div', 'sp');
+          t.appendChild(el('b', '', c ? codeShow(c.code) + ' – ' + (c.name || '') + ' · ' + (a && a.title && a.title !== x.code ? x.code + ' ' + a.title : x.code) : 'مساق محذوف · ' + x.code));
           t.appendChild(el('div', 'n12', pl(x.n, 'ملف', 'ملفات') + ' · ' + size(x.f) + (x.m ? ' · ' + pl(x.m, 'تصحيح', 'تصحيحات') + (x.a ? ' · صوت ' + size(x.a) : '') : '') + (x.ready ? ' · ' + x.ready + ' لم يُرسل' : '')));
           row.appendChild(t);
-          if (x.m) row.appendChild(btn('تنظيف', 'sec', function () {
-            if (!confirm('تُحذف من الجهاز التصحيحات التي أُرسلت لهذا التكليف (تبقى عند الطلاب). متابعة؟')) return;
-            Promise.all(marks.filter(function (m) { return m.k.indexOf(k + '|') === 0 && m.v.state === 'sent'; }).map(function (m) { return fDel('marks', m.k); })).then(load);
+          function mine(m) { var mp = mParse(m.k); return mp.course === x.course && mp.code === x.code; }
+          if (!c) row.appendChild(btn('حذف', 'sec', function () {
+            if (!confirm('هذا المساق لم يعد موجودًا. تُحذف من الآيباد ملفاته وتصحيحاته' + (x.ready ? '، ومنها ' + x.ready + ' لم يُرسل' : '') + '. متابعة؟')) return;
+            Promise.all(files.filter(function (f) { return f.v.course === x.course && f.v.code === x.code; }).map(function (f) { return fDel('files', f.k); })
+              .concat(marks.filter(mine).map(function (m) { return fDel('marks', m.k); }))).then(load);
           }, 'del'));
-          if (x.m) row.lastChild.title = 'يمحو من هذا الآيباد نسخ التصحيحات التي أُرسلت فقط (تبقى عند الطلاب)';
+          else if (x.m > x.ready) {
+            row.appendChild(btn('تنظيف', 'sec', function () {
+              if (!confirm('تُمحى من الآيباد التصحيحات التي وصلت إلى الطلاب في هذا التكليف (تبقى عندهم). متابعة؟')) return;
+              Promise.all(marks.filter(function (m) { return mine(m) && m.v.state === 'sent'; }).map(function (m) { return fDel('marks', m.k); })).then(load);
+            }, 'del'));
+            row.lastChild.title = 'يمحو من هذا الآيباد التصحيحات التي وصلت إلى الطلاب فقط';
+          }
           list.appendChild(row);
         });
       }).catch(function (e) { p.textContent = 'تعذّر الحساب: ' + e.message; });
